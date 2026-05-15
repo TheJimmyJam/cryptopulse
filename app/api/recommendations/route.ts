@@ -3,7 +3,7 @@ import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
 import { scoreCoin, filterAndRank } from "@/lib/scoring";
-import { saveSnapshot, getLatestSnapshot } from "@/lib/supabase";
+import { saveSnapshot, getLatestSnapshot, saveTrackerPicks } from "@/lib/supabase";
 import { DailySnapshot, Strategy } from "@/types/crypto";
 import { format } from "date-fns";
 
@@ -68,12 +68,33 @@ export async function GET(req: NextRequest) {
     strategy,
   };
 
-  // 5. Persist to Supabase
+  // 5. Persist snapshot to Supabase
   try {
     await saveSnapshot(snapshot);
   } catch (err) {
-    console.error("Supabase save failed:", err);
-    // Don't fail the response — just log it
+    console.error("Supabase snapshot save failed:", err);
+  }
+
+  // 6. Auto-record $200 paper trades into tracker
+  try {
+    const picks = top5.map((asset, idx) => ({
+      pick_date: today,
+      strategy,
+      rank: idx + 1,
+      coin_id: asset.id,
+      symbol: asset.symbol.toUpperCase(),
+      name: asset.name,
+      entry_price: asset.price,
+      amount_usd: 200,
+      coins_held: 200 / asset.price,
+      image_url: asset.image ?? null,
+      signal: asset.signal,
+      score_total: asset.scores.total,
+      narrative_tags: asset.narrativeTags ?? [],
+    }));
+    await saveTrackerPicks(picks);
+  } catch (err) {
+    console.error("Tracker save failed:", err);
   }
 
   return NextResponse.json(snapshot);
