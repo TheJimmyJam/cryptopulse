@@ -52,12 +52,26 @@ function runLogoScramble(canvas: HTMLCanvasElement) {
     off.getContext("2d")!.drawImage(img, 0, 0, DISPLAY_W, DISPLAY_H);
     const real = off.getContext("2d")!.getImageData(0, 0, DISPLAY_W, DISPLAY_H).data;
 
-    // Working image data buffer
-    const work = ctx.createImageData(DISPLAY_W, DISPLAY_H);
+    // Trim canvas to actual visible content — scan up from the bottom
+    // to find the last row that contains non-transparent pixels
+    let trimH = DISPLAY_H;
+    outer: for (let y = DISPLAY_H - 1; y >= 0; y--) {
+      for (let x = 0; x < DISPLAY_W; x++) {
+        if (real[(y * DISPLAY_W + x) * 4 + 3] > 10) {
+          trimH = y + 6; // 6px breathing room
+          break outer;
+        }
+      }
+    }
+    canvas.height       = trimH;
+    canvas.style.height = trimH + "px";
 
-    // Block grid dimensions
+    // Working image data buffer
+    const work = ctx.createImageData(DISPLAY_W, trimH);
+
+    // Block grid dimensions (use trimH so we only process visible rows)
     const blocksX = Math.ceil(DISPLAY_W / BLOCK);
-    const blocksY = Math.ceil(DISPLAY_H / BLOCK);
+    const blocksY = Math.ceil(trimH / BLOCK);
     const total   = blocksX * blocksY;
 
     // Fisher-Yates shuffle → randomised reveal order
@@ -71,7 +85,7 @@ function runLogoScramble(canvas: HTMLCanvasElement) {
     const writeBlock = (bi: number, r: number, g: number, b: number, useReal: boolean) => {
       const bx = (bi % blocksX) * BLOCK;
       const by = Math.floor(bi / blocksX) * BLOCK;
-      for (let dy = 0; dy < BLOCK && by + dy < DISPLAY_H; dy++) {
+      for (let dy = 0; dy < BLOCK && by + dy < trimH; dy++) {
         for (let dx = 0; dx < BLOCK && bx + dx < DISPLAY_W; dx++) {
           const i = ((by + dy) * DISPLAY_W + (bx + dx)) * 4;
           if (real[i + 3] > 0) {              // only paint visible logo pixels
