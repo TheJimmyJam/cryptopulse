@@ -5,7 +5,6 @@ import { AssetCard } from "./AssetCard";
 
 interface Props {
   assets: ScoredAsset[];
-  /** Pass a unique key that changes when new data loads so animation re-fires */
   animKey: string;
 }
 
@@ -17,28 +16,26 @@ export function KanbanBoard({ assets, animKey }: Props) {
     const cards = boardRef.current.querySelectorAll<HTMLElement>(".kanban-card");
     if (!cards.length) return;
 
-    // Dynamically import GSAP to keep it client-only
     import("gsap").then(({ gsap }) => {
-      // Kill any in-progress tweens on these elements first
       gsap.killTweensOf(cards);
-
-      // Set initial state: off-screen right + invisible
-      gsap.set(cards, { x: 120, opacity: 0 });
-
-      // Staggered fade-slide in from the right
+      gsap.set(cards, { x: 80, opacity: 0, scale: 0.95 });
       gsap.to(cards, {
         x: 0,
         opacity: 1,
-        duration: 0.55,
+        scale: 1,
+        duration: 0.5,
         ease: "power3.out",
-        stagger: 0.08,
-        clearProps: "transform,opacity", // clean up inline styles after animation
+        stagger: 0.07,
+        clearProps: "transform,opacity",
       });
     });
   }, [animKey]);
 
   return (
-    <div ref={boardRef} className="space-y-3">
+    <div
+      ref={boardRef}
+      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4"
+    >
       {assets.map((asset, i) => (
         <AssetCard key={asset.id} asset={asset} rank={i + 1} />
       ))}
