@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { NavLinks } from "@/components/NavLinks";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -6,8 +7,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-[#1e2535] bg-[#0f1117]/95 sticky top-0 z-50 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/favicon.png" alt="CryptoPulse" className="h-11 w-auto" />
+            <Link href="/">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/favicon.png" alt="CryptoPulse" className="h-11 w-auto hover:opacity-80 transition-opacity" />
+            </Link>
             <NavLinks />
           </div>
           <div className="text-xs text-slate-500 hidden sm:block">
