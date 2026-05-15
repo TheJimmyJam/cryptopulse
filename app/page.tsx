@@ -1,15 +1,12 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { DailySnapshot, Strategy } from "@/types/crypto";
-import { KanbanBoard } from "@/components/KanbanBoard";
-import { StrategySelector } from "@/components/StrategySelector";
-import { ChatPanel } from "@/components/ChatPanel";
-import { format } from "date-fns";
+
+import { useEffect, useRef } from "react";
+import Link from "next/link";
 
 const SCRAMBLE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*[]{}|<>?/\\~";
 
-function scrambleText(el: HTMLElement, finalText: string, duration = 1400) {
-  const totalFrames = 36;
+function scrambleText(el: HTMLElement, finalText: string, duration = 2000): () => void {
+  const totalFrames = 60;
   const frameMs = duration / totalFrames;
   let frame = 0;
   const timer = setInterval(() => {
@@ -31,148 +28,192 @@ function scrambleText(el: HTMLElement, finalText: string, duration = 1400) {
   return () => clearInterval(timer);
 }
 
-export default function Home() {
-  const [strategy, setStrategy]     = useState<Strategy>("growth");
-  const [snapshot, setSnapshot]     = useState<DailySnapshot | null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  // Changes whenever new data arrives — tells KanbanBoard to re-run GSAP
-  const [animKey, setAnimKey]       = useState("init");
+const COINS = [
+  { s: "BTC",   img: "https://assets.coingecko.com/coins/images/1/small/bitcoin.png" },
+  { s: "ETH",   img: "https://assets.coingecko.com/coins/images/279/small/ethereum.png" },
+  { s: "SOL",   img: "https://assets.coingecko.com/coins/images/4128/small/solana.png" },
+  { s: "XRP",   img: "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png" },
+  { s: "ADA",   img: "https://assets.coingecko.com/coins/images/975/small/cardano.png" },
+  { s: "BNB",   img: "https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png" },
+  { s: "AVAX",  img: "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png" },
+  { s: "DOGE",  img: "https://assets.coingecko.com/coins/images/5/small/dogecoin.png" },
+  { s: "DOT",   img: "https://assets.coingecko.com/coins/images/12171/small/polkadot.png" },
+  { s: "LINK",  img: "https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png" },
+  { s: "MATIC", img: "https://assets.coingecko.com/coins/images/4713/small/matic-token-icon.png" },
+  { s: "UNI",   img: "https://assets.coingecko.com/coins/images/12504/small/uniswap-uni.png" },
+  { s: "LTC",   img: "https://assets.coingecko.com/coins/images/2/small/litecoin.png" },
+  { s: "ATOM",  img: "https://assets.coingecko.com/coins/images/1481/small/cosmos_hub.png" },
+  { s: "NEAR",  img: "https://assets.coingecko.com/coins/images/10365/small/near.png" },
+  { s: "SHIB",  img: "https://assets.coingecko.com/coins/images/11939/small/shiba.png" },
+  { s: "TRX",   img: "https://assets.coingecko.com/coins/images/1094/small/tron-logo.png" },
+  { s: "XLM",   img: "https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png" },
+  { s: "AAVE",  img: "https://assets.coingecko.com/coins/images/12645/small/AAVE.png" },
+  { s: "OP",    img: "https://assets.coingecko.com/coins/images/25244/small/Optimism.png" },
+];
 
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const dateRef  = useRef<HTMLParagraphElement>(null);
+const LANE_CFG = [
+  { offset: 0,  top: "5%",  size: 44, gap: 52, dur: 50, dir:  1, opacity: 0.20 },
+  { offset: 6,  top: "23%", size: 56, gap: 64, dur: 36, dir: -1, opacity: 0.26 },
+  { offset: 11, top: "43%", size: 38, gap: 46, dur: 62, dir:  1, opacity: 0.15 },
+  { offset: 15, top: "63%", size: 50, gap: 58, dur: 44, dir: -1, opacity: 0.22 },
+  { offset: 4,  top: "83%", size: 34, gap: 42, dur: 70, dir:  1, opacity: 0.13 },
+];
 
-  // Scramble on mount
+const FEATURES = [
+  {
+    icon: "⚡",
+    title: "Quantitative Scoring",
+    desc: "7-factor model across momentum, liquidity, on-chain data, DeFi fundamentals, volatility, and market sentiment.",
+  },
+  {
+    icon: "🎯",
+    title: "Top 5 Daily Picks",
+    desc: "Three strategies — Conservative, Growth, and Speculative — with ranked picks refreshed every morning.",
+  },
+  {
+    icon: "📊",
+    title: "Signal Tracker",
+    desc: "Every pick is paper-traded at $200. Track live P&L and validate model accuracy over time.",
+  },
+];
+
+function laneCoins(offset: number) {
+  const shifted = [...COINS.slice(offset), ...COINS.slice(0, offset)];
+  return [...shifted, ...shifted];
+}
+
+export default function LandingPage() {
+  const titleRef    = useRef<HTMLHeadingElement>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const laneRefs    = useRef<(HTMLDivElement | null)[]>([]);
+
   useEffect(() => {
     const cleanups: (() => void)[] = [];
+
     if (titleRef.current) {
-      cleanups.push(scrambleText(titleRef.current, "Daily Signal", 1200));
+      cleanups.push(scrambleText(titleRef.current, "CryptoPulse", 2200));
     }
-    if (dateRef.current) {
-      const dateText = dateRef.current.textContent ?? "";
-      // slight delay so title starts first
-      const t = setTimeout(() => {
-        if (dateRef.current) cleanups.push(scrambleText(dateRef.current, dateText, 1400));
-      }, 300);
-      cleanups.push(() => clearTimeout(t));
-    }
+    const t1 = setTimeout(() => {
+      if (subtitleRef.current) {
+        cleanups.push(scrambleText(subtitleRef.current, "AI-Powered Daily Crypto Signals", 1800));
+      }
+    }, 500);
+    cleanups.push(() => clearTimeout(t1));
+
+    import("gsap").then(({ gsap }) => {
+      laneRefs.current.forEach((lane, i) => {
+        if (!lane) return;
+        const { dur, dir } = LANE_CFG[i];
+        if (dir === 1) {
+          gsap.to(lane, { x: "-50%", duration: dur, ease: "none", repeat: -1 });
+        } else {
+          gsap.fromTo(lane, { x: "-50%" }, { x: "0%", duration: dur, ease: "none", repeat: -1 });
+        }
+      });
+    });
+
     return () => cleanups.forEach((fn) => fn());
   }, []);
 
-  const fetchData = useCallback(async (forceRefresh = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/recommendations?strategy=${strategy}${forceRefresh ? "&refresh=true" : ""}`
-      );
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data: DailySnapshot = await res.json();
-      setSnapshot(data);
-      setLastUpdated(new Date().toLocaleTimeString());
-      setAnimKey(`${strategy}-${Date.now()}`);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [strategy]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const today = format(new Date(), "MMMM d, yyyy");
-
   return (
-    <>
-    <div className="space-y-6">
+    <div className="relative min-h-screen overflow-hidden flex flex-col items-center justify-center bg-[#0a0e1a]">
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 ref={titleRef} className="text-2xl font-black text-white">Daily Signal</h1>
-          <p ref={dateRef} className="text-slate-500 text-sm mt-0.5">{today}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs text-slate-500">Updated {lastUpdated}</span>}
-          <button
-            onClick={() => fetchData(true)}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+      {/* ── Background crypto lanes ── */}
+      <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+        {LANE_CFG.map((lane, i) => (
+          <div
+            key={i}
+            className="absolute left-0"
+            style={{ top: lane.top, opacity: lane.opacity }}
           >
-            {loading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Scanning...
-              </>
-            ) : "↻ Refresh"}
-          </button>
-        </div>
+            <div
+              ref={(el) => { laneRefs.current[i] = el; }}
+              className="flex items-center"
+              style={{ gap: `${lane.gap}px` }}
+            >
+              {laneCoins(lane.offset).map((coin, j) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={`${i}-${j}`}
+                  src={coin.img}
+                  alt={coin.s}
+                  className="rounded-full flex-shrink-0 object-cover"
+                  style={{ width: lane.size, height: lane.size }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Strategy selector */}
-      <StrategySelector current={strategy} onChange={setStrategy} />
+      {/* ── Radial vignette — center readable ── */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 75% 85% at 50% 50%, rgba(10,14,26,0.93) 0%, rgba(10,14,26,0.68) 55%, rgba(10,14,26,0.15) 100%)",
+        }}
+      />
 
-      {/* Error */}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm">
-          <strong>Error loading signals:</strong> {error}
-          <button onClick={() => fetchData()} className="ml-3 underline hover:no-underline">
-            Try again
-          </button>
-        </div>
-      )}
+      {/* ── Content ── */}
+      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-3xl w-full py-20">
 
-      {/* Loading skeletons */}
-      {loading && !snapshot && (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-20 bg-[#161b27] border border-[#1e2535] rounded-xl animate-pulse" />
+        {/* Logo */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="CryptoPulse" className="h-14 w-auto mb-8" />
+
+        {/* Title scramble */}
+        <h1
+          ref={titleRef}
+          className="text-6xl sm:text-8xl font-black text-white tracking-tight leading-none mb-5 font-mono"
+        >
+          CryptoPulse
+        </h1>
+
+        {/* Subtitle scramble */}
+        <p
+          ref={subtitleRef}
+          className="text-base sm:text-xl text-blue-400 font-mono tracking-wide mb-5"
+        >
+          AI-Powered Daily Crypto Signals
+        </p>
+
+        <p className="text-slate-400 text-sm sm:text-base max-w-lg mb-12 leading-relaxed">
+          A quantitative scoring engine that surfaces the top&nbsp;5 crypto opportunities every
+          day — ranked by momentum, liquidity, on-chain data, DeFi fundamentals, and market
+          sentiment.
+        </p>
+
+        {/* Feature cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full mb-12">
+          {FEATURES.map(({ icon, title, desc }) => (
+            <div
+              key={title}
+              className="bg-white/5 border border-white/10 rounded-2xl p-5 text-left backdrop-blur-sm"
+            >
+              <div className="text-2xl mb-3">{icon}</div>
+              <div className="text-sm font-bold text-white mb-2">{title}</div>
+              <div className="text-xs text-slate-400 leading-relaxed">{desc}</div>
+            </div>
           ))}
         </div>
-      )}
 
-      {/* Top 5 Kanban board */}
-      {snapshot && !loading && (
-        <>
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-white">
-              Top 5 Daily Opportunities
-              <span className="ml-2 text-sm font-normal text-slate-400 capitalize">
-                · {strategy} strategy
-              </span>
-            </h2>
-            <span className="text-xs text-slate-600">Click any card to expand</span>
-          </div>
+        {/* CTA */}
+        <Link
+          href="/dashboard"
+          className="group inline-flex items-center gap-3 px-10 py-5 bg-blue-600 hover:bg-blue-500 text-white font-black text-xl rounded-2xl transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-105 active:scale-100"
+        >
+          Provide Today&apos;s Picks
+          <span className="text-2xl group-hover:translate-x-1.5 transition-transform duration-200">
+            →
+          </span>
+        </Link>
 
-          {snapshot.top5.length > 0 ? (
-            <KanbanBoard assets={snapshot.top5} animKey={animKey} />
-          ) : (
-            <div className="bg-[#161b27] border border-[#1e2535] rounded-xl p-8 text-center text-slate-500">
-              <p className="text-lg mb-2">No qualifying assets found</p>
-              <p className="text-sm">
-                The current market regime or filters excluded all candidates.
-                Try switching to a different strategy.
-              </p>
-            </div>
-          )}
-
-          {/* Disclaimer */}
-          <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
-            <p className="text-xs text-amber-200/60 leading-relaxed">
-              <strong className="text-amber-400">Disclaimer:</strong> CryptoPulse surfaces
-              quantitative signals based on publicly available market data, technical indicators,
-              and sentiment scores. This is <strong>not financial advice</strong>. The model may be
-              wrong. Crypto markets are highly volatile. Always use position sizing, stop-losses,
-              and conduct your own research before making any investment decisions.
-            </p>
-          </div>
-        </>
-      )}
+        <p className="mt-8 text-xs text-slate-600 max-w-sm">
+          Not financial advice. Always conduct your own research and use stop-losses.
+        </p>
+      </div>
     </div>
-
-    {/* Floating AI chat — always present, has access to current snapshot */}
-    <ChatPanel snapshot={snapshot} />
-    </>
   );
 }
