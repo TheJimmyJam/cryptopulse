@@ -4,8 +4,8 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 const LINKS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/tracker", label: "Tracker" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/tracker",   label: "Tracker"   },
 ];
 
 export function NavLinks() {
