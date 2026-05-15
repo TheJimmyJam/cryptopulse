@@ -242,7 +242,7 @@ export default function LandingPage() {
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full pt-2 pb-20">
 
         {/* Logo — canvas pixel-noise reveal */}
-        <canvas ref={logoRef} className="mb-4" />
+        <canvas ref={logoRef} className="mb-2" />
 
         {/* Subtitle scramble */}
         <p
