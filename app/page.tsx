@@ -1,10 +1,35 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DailySnapshot, Strategy } from "@/types/crypto";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { StrategySelector } from "@/components/StrategySelector";
 import { ChatPanel } from "@/components/ChatPanel";
 import { format } from "date-fns";
+
+const SCRAMBLE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*[]{}|<>?/\\~";
+
+function scrambleText(el: HTMLElement, finalText: string, duration = 1400) {
+  const totalFrames = 36;
+  const frameMs = duration / totalFrames;
+  let frame = 0;
+  const timer = setInterval(() => {
+    frame++;
+    const resolved = Math.floor((frame / totalFrames) * finalText.length);
+    el.textContent = finalText
+      .split("")
+      .map((char, i) => {
+        if (char === " ") return " ";
+        if (i < resolved) return char;
+        return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+      })
+      .join("");
+    if (frame >= totalFrames) {
+      el.textContent = finalText;
+      clearInterval(timer);
+    }
+  }, frameMs);
+  return () => clearInterval(timer);
+}
 
 export default function Home() {
   const [strategy, setStrategy]     = useState<Strategy>("growth");
@@ -14,6 +39,26 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   // Changes whenever new data arrives — tells KanbanBoard to re-run GSAP
   const [animKey, setAnimKey]       = useState("init");
+
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const dateRef  = useRef<HTMLParagraphElement>(null);
+
+  // Scramble on mount
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    if (titleRef.current) {
+      cleanups.push(scrambleText(titleRef.current, "Daily Signal", 1200));
+    }
+    if (dateRef.current) {
+      const dateText = dateRef.current.textContent ?? "";
+      // slight delay so title starts first
+      const t = setTimeout(() => {
+        if (dateRef.current) cleanups.push(scrambleText(dateRef.current, dateText, 1400));
+      }, 300);
+      cleanups.push(() => clearTimeout(t));
+    }
+    return () => cleanups.forEach((fn) => fn());
+  }, []);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -45,8 +90,8 @@ export default function Home() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white">Daily Signal</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{today}</p>
+          <h1 ref={titleRef} className="text-2xl font-black text-white">Daily Signal</h1>
+          <p ref={dateRef} className="text-slate-500 text-sm mt-0.5">{today}</p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdated && <span className="text-xs text-slate-500">Updated {lastUpdated}</span>}
