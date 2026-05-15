@@ -16,7 +16,8 @@
     "recharts": "^2.10.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.0",
-    "gsap": "^3.12.5"
+    "gsap": "^3.12.5",
+    "@anthropic-ai/sdk": "^0.27.0"
   },
   "devDependencies": {
     "@types/node": "^20",
