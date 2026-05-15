@@ -12,11 +12,11 @@ export async function GET() {
     picks = await getTrackerPicks();
   } catch (err) {
     console.error("Failed to load tracker picks:", err);
-    return NextResponse.json({ picks: [], summary: null, debug: String(err) });
+    return NextResponse.json({ picks: [], summary: null });
   }
 
   if (!picks.length) {
-    return NextResponse.json({ picks: [], summary: null, debug: "getTrackerPicks returned empty array" });
+    return NextResponse.json({ picks: [], summary: null });
   }
 
   // 2. Unique coin IDs from last 90 days
