@@ -150,7 +150,7 @@ export function ChatPanel({ snapshot }: Props) {
       <button
         onClick={() => setOpen((v) => !v)}
         className={clsx(
-          "fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-2xl",
+          "fixed bottom-6 right-4 sm:right-6 z-40 w-14 h-14 rounded-full shadow-2xl",
           "flex items-center justify-center transition-all duration-300",
           "bg-gradient-to-br from-blue-600 to-violet-600 hover:scale-110",
           open && "rotate-90 scale-110"
@@ -174,17 +174,17 @@ export function ChatPanel({ snapshot }: Props) {
 
       {/* Unread dot when there's data but chat hasn't been opened */}
       {!open && hasData && messages.length === 0 && (
-        <div className="fixed bottom-[72px] right-6 z-40 w-3 h-3 rounded-full bg-green-400 ring-2 ring-[#0f1117] animate-pulse" />
+        <div className="fixed bottom-[72px] right-4 sm:right-6 z-40 w-3 h-3 rounded-full bg-green-400 ring-2 ring-[#0f1117] animate-pulse" />
       )}
 
       {/* ── Chat panel ── */}
       {open && (
         <div
           ref={panelRef}
-          className="fixed bottom-24 right-6 z-40 w-[380px] max-w-[calc(100vw-3rem)]
+          className="fixed bottom-24 right-4 sm:right-6 z-40 w-[calc(100vw-2rem)] sm:w-[380px]
             bg-[#161b27] border border-[#2e3a55] rounded-2xl shadow-2xl shadow-black/60
             flex flex-col overflow-hidden"
-          style={{ height: "520px" }}
+          style={{ height: "min(520px, calc(100dvh - 140px))" }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-[#1e2535] flex-shrink-0">
