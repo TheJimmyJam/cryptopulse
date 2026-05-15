@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { DailySnapshot, PerformanceRow, SnapshotRow, Strategy } from "@/types/crypto";
+import { DailySnapshot, PerformanceRow, SnapshotRow, Strategy, TrackerPick } from "@/types/crypto";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -83,4 +83,28 @@ export async function getPerformanceHistory(coinId?: string): Promise<Performanc
   const { data, error } = await query;
   if (error) throw error;
   return (data as PerformanceRow[]) ?? [];
+}
+
+// ─── Tracker picks ─────────────────────────────────────────────────────────
+
+export async function saveTrackerPicks(
+  picks: Omit<TrackerPick, "id" | "created_at">[]
+): Promise<void> {
+  const db = getSupabaseAdmin();
+  const { error } = await db.from("tracker_picks").upsert(picks, {
+    onConflict: "pick_date,strategy,rank",
+    ignoreDuplicates: true,
+  });
+  if (error) throw error;
+}
+
+export async function getTrackerPicks(): Promise<TrackerPick[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("tracker_picks")
+    .select("*")
+    .order("pick_date", { ascending: false })
+    .order("rank", { ascending: true });
+  if (error) throw error;
+  return (data as TrackerPick[]) ?? [];
 }
