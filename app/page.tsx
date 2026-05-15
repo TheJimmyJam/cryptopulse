@@ -59,24 +59,6 @@ const LANE_CFG = [
   { offset: 4,  top: "83%", size: 34, gap: 42, dur: 70, dir:  1, opacity: 0.13 },
 ];
 
-const FEATURES = [
-  {
-    icon: "⚡",
-    title: "Quantitative Scoring",
-    desc: "7-factor model across momentum, liquidity, on-chain data, DeFi fundamentals, volatility, and market sentiment.",
-  },
-  {
-    icon: "🎯",
-    title: "Top 5 Daily Picks",
-    desc: "Three strategies — Conservative, Growth, and Speculative — with ranked picks refreshed every morning.",
-  },
-  {
-    icon: "📊",
-    title: "Signal Tracker",
-    desc: "Every pick is paper-traded at $200. Track live P&L and validate model accuracy over time.",
-  },
-];
-
 function laneCoins(offset: number) {
   const shifted = [...COINS.slice(offset), ...COINS.slice(0, offset)];
   return [...shifted, ...shifted];
@@ -147,7 +129,7 @@ export default function LandingPage() {
         ))}
       </div>
 
-      {/* ── Radial vignette — center readable ── */}
+      {/* ── Radial vignette ── */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -157,11 +139,16 @@ export default function LandingPage() {
       />
 
       {/* ── Content ── */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-3xl w-full py-20">
+      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full py-20">
 
-        {/* Logo */}
+        {/* Logo — large */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="CryptoPulse" className="h-14 w-auto mb-8" />
+        <img
+          src="/logo.png"
+          alt="CryptoPulse"
+          className="w-auto mb-10"
+          style={{ height: "336px" }}
+        />
 
         {/* Title scramble */}
         <h1
@@ -174,7 +161,7 @@ export default function LandingPage() {
         {/* Subtitle scramble */}
         <p
           ref={subtitleRef}
-          className="text-base sm:text-xl text-blue-400 font-mono tracking-wide mb-5"
+          className="text-base sm:text-xl text-blue-400 font-mono tracking-wide mb-6"
         >
           AI-Powered Daily Crypto Signals
         </p>
@@ -184,20 +171,6 @@ export default function LandingPage() {
           day — ranked by momentum, liquidity, on-chain data, DeFi fundamentals, and market
           sentiment.
         </p>
-
-        {/* Feature cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full mb-12">
-          {FEATURES.map(({ icon, title, desc }) => (
-            <div
-              key={title}
-              className="bg-white/5 border border-white/10 rounded-2xl p-5 text-left backdrop-blur-sm"
-            >
-              <div className="text-2xl mb-3">{icon}</div>
-              <div className="text-sm font-bold text-white mb-2">{title}</div>
-              <div className="text-xs text-slate-400 leading-relaxed">{desc}</div>
-            </div>
-          ))}
-        </div>
 
         {/* CTA */}
         <Link
