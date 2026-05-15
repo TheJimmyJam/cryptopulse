@@ -135,11 +135,11 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-white">
               Top 5 Daily Opportunities
-              <span className="ml-2 text-sm font-normal text-slate-400 capitalize">
+              <span className="hidden sm:inline ml-2 text-sm font-normal text-slate-400 capitalize">
                 · {strategy} strategy
               </span>
             </h2>
-            <span className="text-xs text-slate-600">Click any card to expand</span>
+            <span className="hidden sm:block text-xs text-slate-600">Click any card to expand</span>
           </div>
 
           {snapshot.top5.length > 0 ? (
