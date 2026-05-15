@@ -21,13 +21,13 @@ export async function GET() {
 
   // 2. Unique coin IDs from last 90 days
   const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
-  const recentCoinIds: string[] = [
-    ...new Set(
+  const recentCoinIds: string[] = Array.from(
+    new Set(
       picks
         .filter((p) => new Date(p.pick_date).getTime() >= cutoffMs)
         .map((p) => p.coin_id)
-    ),
-  ];
+    )
+  );
 
   // 3. Fetch live prices from CoinGecko
   const currentPrices: Record<string, number> = {};
