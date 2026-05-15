@@ -40,6 +40,7 @@ export default function Home() {
   const today = format(new Date(), "MMMM d, yyyy");
 
   return (
+    <>
     <div className="space-y-6">
 
       {/* Header */}
@@ -131,5 +132,6 @@ export default function Home() {
 
     {/* Floating AI chat — always present, has access to current snapshot */}
     <ChatPanel snapshot={snapshot} />
+    </>
   );
 }
