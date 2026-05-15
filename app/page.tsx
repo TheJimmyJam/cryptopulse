@@ -4,6 +4,7 @@ import { DailySnapshot, Strategy } from "@/types/crypto";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { MarketRegimePanel } from "@/components/MarketRegimePanel";
 import { StrategySelector } from "@/components/StrategySelector";
+import { ChatPanel } from "@/components/ChatPanel";
 import { format } from "date-fns";
 
 export default function Home() {
@@ -127,5 +128,8 @@ export default function Home() {
         </>
       )}
     </div>
+
+    {/* Floating AI chat — always present, has access to current snapshot */}
+    <ChatPanel snapshot={snapshot} />
   );
 }
