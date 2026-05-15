@@ -109,7 +109,7 @@ export default function TrackerPage() {
     return dateDiff !== 0 ? dateDiff : a.rank - b.rank;
   });
 
-  const { summary } = data ?? {};
+  const summary = data?.summary ?? null;
   const hasData = !loading && sorted.length > 0;
 
   return (
