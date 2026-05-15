@@ -28,6 +28,95 @@ function scrambleText(el: HTMLElement, finalText: string, duration = 2000): () =
   return () => clearInterval(timer);
 }
 
+// Canvas pixel-noise → logo reveal
+function runLogoScramble(canvas: HTMLCanvasElement) {
+  const img = new Image();
+  img.src = "/logo.png";
+
+  img.onload = () => {
+    const DISPLAY_H = 336;
+    const DISPLAY_W = Math.round((img.naturalWidth / img.naturalHeight) * DISPLAY_H);
+    const BLOCK     = 3; // 3×3 pixel blocks — digital feel, good performance
+
+    canvas.width        = DISPLAY_W;
+    canvas.height       = DISPLAY_H;
+    canvas.style.width  = DISPLAY_W + "px";
+    canvas.style.height = DISPLAY_H + "px";
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+
+    // Capture real pixel data at display resolution
+    const off  = document.createElement("canvas");
+    off.width  = DISPLAY_W;
+    off.height = DISPLAY_H;
+    off.getContext("2d")!.drawImage(img, 0, 0, DISPLAY_W, DISPLAY_H);
+    const real = off.getContext("2d")!.getImageData(0, 0, DISPLAY_W, DISPLAY_H).data;
+
+    // Working image data buffer
+    const work = ctx.createImageData(DISPLAY_W, DISPLAY_H);
+
+    // Block grid dimensions
+    const blocksX = Math.ceil(DISPLAY_W / BLOCK);
+    const blocksY = Math.ceil(DISPLAY_H / BLOCK);
+    const total   = blocksX * blocksY;
+
+    // Fisher-Yates shuffle → randomised reveal order
+    const order = Array.from({ length: total }, (_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+
+    // Helper: write one block into the work buffer
+    const writeBlock = (bi: number, r: number, g: number, b: number, useReal: boolean) => {
+      const bx = (bi % blocksX) * BLOCK;
+      const by = Math.floor(bi / blocksX) * BLOCK;
+      for (let dy = 0; dy < BLOCK && by + dy < DISPLAY_H; dy++) {
+        for (let dx = 0; dx < BLOCK && bx + dx < DISPLAY_W; dx++) {
+          const i = ((by + dy) * DISPLAY_W + (bx + dx)) * 4;
+          if (real[i + 3] > 0) {              // only paint visible logo pixels
+            work.data[i]     = useReal ? real[i]     : r;
+            work.data[i + 1] = useReal ? real[i + 1] : g;
+            work.data[i + 2] = useReal ? real[i + 2] : b;
+            work.data[i + 3] = real[i + 3];   // always preserve alpha
+          }
+        }
+      }
+    };
+
+    // Initialise every block as flickering noise
+    for (let b = 0; b < total; b++) {
+      writeBlock(order[b], Math.random() * 255 | 0, Math.random() * 255 | 0, Math.random() * 255 | 0, false);
+    }
+
+    const DURATION   = 2600; // ms for full reveal
+    const start      = performance.now();
+    let   numRevealed = 0;
+
+    const frame = (now: number) => {
+      const progress = Math.min((now - start) / DURATION, 1);
+      const target   = Math.floor(progress * total);
+
+      // Lock in newly-revealed blocks
+      while (numRevealed < target) {
+        writeBlock(order[numRevealed], 0, 0, 0, true);
+        numRevealed++;
+      }
+
+      // Flicker ~40 % of still-unrevealed blocks each frame
+      for (let b = numRevealed; b < total; b++) {
+        if (Math.random() > 0.4) continue;
+        writeBlock(order[b], Math.random() * 255 | 0, Math.random() * 255 | 0, Math.random() * 255 | 0, false);
+      }
+
+      ctx.putImageData(work, 0, 0);
+      if (progress < 1) requestAnimationFrame(frame);
+    };
+
+    requestAnimationFrame(frame);
+  };
+}
+
 const COINS = [
   { s: "BTC",   img: "https://assets.coingecko.com/coins/images/1/small/bitcoin.png" },
   { s: "ETH",   img: "https://assets.coingecko.com/coins/images/279/small/ethereum.png" },
@@ -65,6 +154,7 @@ function laneCoins(offset: number) {
 }
 
 export default function LandingPage() {
+  const logoRef     = useRef<HTMLCanvasElement>(null);
   const titleRef    = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const laneRefs    = useRef<(HTMLDivElement | null)[]>([]);
@@ -72,16 +162,19 @@ export default function LandingPage() {
   useEffect(() => {
     const cleanups: (() => void)[] = [];
 
-    if (titleRef.current) {
-      cleanups.push(scrambleText(titleRef.current, "CryptoPulse", 2200));
-    }
-    const t1 = setTimeout(() => {
-      if (subtitleRef.current) {
-        cleanups.push(scrambleText(subtitleRef.current, "AI-Powered Daily Crypto Signals", 1800));
-      }
-    }, 500);
-    cleanups.push(() => clearTimeout(t1));
+    // Canvas logo scramble
+    if (logoRef.current) runLogoScramble(logoRef.current);
 
+    // Text scrambles — slight delay so logo fires first
+    const t0 = setTimeout(() => {
+      if (titleRef.current)    cleanups.push(scrambleText(titleRef.current,    "CryptoPulse",                   2200));
+    }, 200);
+    const t1 = setTimeout(() => {
+      if (subtitleRef.current) cleanups.push(scrambleText(subtitleRef.current, "AI-Powered Daily Crypto Signals", 1800));
+    }, 700);
+    cleanups.push(() => clearTimeout(t0), () => clearTimeout(t1));
+
+    // GSAP lane animations
     import("gsap").then(({ gsap }) => {
       laneRefs.current.forEach((lane, i) => {
         if (!lane) return;
@@ -141,14 +234,8 @@ export default function LandingPage() {
       {/* ── Content ── */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full py-20">
 
-        {/* Logo — large */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logo.png"
-          alt="CryptoPulse"
-          className="w-auto mb-10"
-          style={{ height: "336px" }}
-        />
+        {/* Logo — canvas pixel-noise reveal */}
+        <canvas ref={logoRef} className="mb-10" />
 
         {/* Title scramble */}
         <h1
