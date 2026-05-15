@@ -34,8 +34,11 @@ function runLogoScramble(canvas: HTMLCanvasElement) {
   img.src = "/logo.png";
 
   img.onload = () => {
-    const DISPLAY_H = 336;
-    const DISPLAY_W = Math.round((img.naturalWidth / img.naturalHeight) * DISPLAY_H);
+    const ratio     = img.naturalWidth / img.naturalHeight;
+    // Responsive: cap width to viewport minus padding so logo never overflows on mobile
+    const maxW      = window.innerWidth - 48;
+    const DISPLAY_H = Math.min(336, Math.floor(maxW / ratio));
+    const DISPLAY_W = Math.round(ratio * DISPLAY_H);
     const BLOCK     = 3; // 3×3 pixel blocks — digital feel, good performance
 
     canvas.width        = DISPLAY_W;
@@ -276,10 +279,10 @@ export default function LandingPage() {
         {/* CTA */}
         <Link
           href="/dashboard"
-          className="group inline-flex items-center gap-3 px-10 py-5 bg-blue-600 hover:bg-blue-500 text-white font-black text-xl rounded-2xl transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-105 active:scale-100"
+          className="group inline-flex w-full sm:w-auto justify-center items-center gap-3 px-7 sm:px-10 py-4 sm:py-5 bg-blue-600 hover:bg-blue-500 text-white font-black text-lg sm:text-xl rounded-2xl transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-105 active:scale-100"
         >
           Provide Today&apos;s Picks
-          <span className="text-2xl group-hover:translate-x-1.5 transition-transform duration-200">
+          <span className="text-xl sm:text-2xl group-hover:translate-x-1.5 transition-transform duration-200">
             →
           </span>
         </Link>
