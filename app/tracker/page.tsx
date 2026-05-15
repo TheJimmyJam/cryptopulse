@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { TrackerPickEnriched } from "@/types/crypto";
 import clsx from "clsx";
 
@@ -65,7 +65,7 @@ function StatCard({
 }: {
   label: string;
   value: string;
-  sub?: React.ReactNode;
+  sub?: ReactNode;
   highlight?: "green" | "red";
 }) {
   return (
