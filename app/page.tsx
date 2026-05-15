@@ -232,10 +232,10 @@ export default function LandingPage() {
       />
 
       {/* ── Content ── */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full py-20">
+      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full pt-2 pb-20">
 
         {/* Logo — canvas pixel-noise reveal */}
-        <canvas ref={logoRef} className="mb-10" />
+        <canvas ref={logoRef} className="mb-1" />
 
         {/* Title scramble */}
         <h1
