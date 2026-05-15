@@ -1,5 +1,5 @@
 {
-  "name": "cryptopulse",
+  "name": "cannonsignal",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,8 @@
     "react-dom": "^18",
     "recharts": "^2.10.0",
     "clsx": "^2.1.0",
-    "date-fns": "^3.3.0"
+    "date-fns": "^3.3.0",
+    "gsap": "^3.12.5"
   },
   "devDependencies": {
     "@types/node": "^20",
