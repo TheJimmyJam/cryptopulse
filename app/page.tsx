@@ -155,8 +155,8 @@ function laneCoins(offset: number) {
 
 export default function LandingPage() {
   const logoRef     = useRef<HTMLCanvasElement>(null);
-  const titleRef    = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const descRef     = useRef<HTMLParagraphElement>(null);
   const laneRefs    = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
@@ -165,13 +165,20 @@ export default function LandingPage() {
     // Canvas logo scramble
     if (logoRef.current) runLogoScramble(logoRef.current);
 
-    // Text scrambles — slight delay so logo fires first
+    // Subtitle scramble — starts as logo is resolving
     const t0 = setTimeout(() => {
-      if (titleRef.current)    cleanups.push(scrambleText(titleRef.current,    "CryptoPulse",                   2200));
-    }, 200);
+      if (subtitleRef.current)
+        cleanups.push(scrambleText(subtitleRef.current, "AI-Powered Daily Crypto Signals", 1800));
+    }, 300);
+    // Description scramble — staggered after subtitle
     const t1 = setTimeout(() => {
-      if (subtitleRef.current) cleanups.push(scrambleText(subtitleRef.current, "AI-Powered Daily Crypto Signals", 1800));
-    }, 700);
+      if (descRef.current)
+        cleanups.push(scrambleText(
+          descRef.current,
+          "A quantitative scoring engine that surfaces the top 5 crypto opportunities every day — ranked by momentum, liquidity, on-chain data, DeFi fundamentals, and market sentiment.",
+          2400
+        ));
+    }, 900);
     cleanups.push(() => clearTimeout(t0), () => clearTimeout(t1));
 
     // GSAP lane animations
@@ -235,26 +242,19 @@ export default function LandingPage() {
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl w-full pt-2 pb-20">
 
         {/* Logo — canvas pixel-noise reveal */}
-        <canvas ref={logoRef} className="mb-1" />
-
-        {/* Title scramble */}
-        <h1
-          ref={titleRef}
-          className="text-6xl sm:text-8xl font-black text-white tracking-tight leading-none mb-5 font-mono"
-        >
-          CryptoPulse
-        </h1>
+        <canvas ref={logoRef} className="mb-4" />
 
         {/* Subtitle scramble */}
         <p
           ref={subtitleRef}
-          className="text-base sm:text-xl text-blue-400 font-mono tracking-wide mb-6"
+          className="text-base sm:text-xl text-blue-400 font-mono tracking-wide mb-4"
         >
           AI-Powered Daily Crypto Signals
         </p>
 
-        <p className="text-slate-400 text-sm sm:text-base max-w-lg mb-12 leading-relaxed">
-          A quantitative scoring engine that surfaces the top&nbsp;5 crypto opportunities every
+        {/* Description scramble */}
+        <p ref={descRef} className="text-slate-400 text-sm sm:text-base max-w-lg mb-12 leading-relaxed">
+          A quantitative scoring engine that surfaces the top 5 crypto opportunities every
           day — ranked by momentum, liquidity, on-chain data, DeFi fundamentals, and market
           sentiment.
         </p>
