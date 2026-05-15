@@ -169,3 +169,31 @@ export interface PerformanceRow {
   return_30d: number | null;
   signal: SignalType;
 }
+
+// ─── Tracker picks ─────────────────────────────────────────────────────────
+
+export interface TrackerPick {
+  id: string;
+  pick_date: string;           // "2026-05-15"
+  strategy: Strategy;
+  rank: number;                // 1–5
+  coin_id: string;
+  symbol: string;
+  name: string;
+  entry_price: number;
+  amount_usd: number;          // 200
+  coins_held: number;          // amount_usd / entry_price
+  image_url: string | null;
+  signal: SignalType | null;
+  score_total: number | null;
+  narrative_tags: string[];
+  created_at: string;
+}
+
+export interface TrackerPickEnriched extends TrackerPick {
+  currentPrice: number | null;
+  currentValue: number | null;  // coins_held * currentPrice
+  pnlUsd: number | null;        // currentValue - amount_usd
+  pnlPct: number | null;        // pnlUsd / amount_usd * 100
+  daysSincePick: number;
+}
