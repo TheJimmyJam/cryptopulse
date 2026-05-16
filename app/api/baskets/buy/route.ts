@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
-import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
-import { buildDefiMap } from "@/lib/defillama";
-import { buildMarketRegime } from "@/lib/feargreed";
-import { scoreCoin, pickDailyBasket, isStablecoin } from "@/lib/scoring";
+import { ensureTodayPicks } from "@/lib/recommend";
 import {
   createBasket,
   getBasketRowByDate,
@@ -13,7 +10,7 @@ import { Strategy } from "@/types/crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 min — heavy CoinGecko fetches
+export const maxDuration = 300;
 
 const STRATEGIES: Strategy[] = ["conservative", "growth", "speculative"];
 const PER_COIN_USD = 200;
@@ -33,21 +30,22 @@ function getFeePct(): number {
 /**
  * POST /api/baskets/buy
  *
- * Daily buy hook: builds today's $3000 paper-traded basket.
- *   • Top 5 coins from each of 3 strategies → 15 holdings
- *   • $200 per holding × 15 = $3000 total
- *   • Idempotent: re-calling on the same day returns the existing basket
+ * Records today's $3,000 paper-traded basket. CRITICAL: this endpoint does
+ * NOT compute its own picks — it reads the EXACT same recommendations the
+ * dashboard shows (via ensureTodayPicks, which also writes to daily_snapshots).
+ * If snapshots don't exist for today yet, ensureTodayPicks generates them
+ * once and persists them, so the dashboard sees the same coins the tracker
+ * just bought.
  *
- * No auth required — paper trades only, idempotent by date.
+ * Idempotent — re-calling on a day with an existing basket is a no-op.
  */
 export async function POST(req: NextRequest) {
-  // Allow overriding the basket date via ?date=YYYY-MM-DD (for backfills / testing)
   const dateParam = req.nextUrl.searchParams.get("date");
   const basketDate = dateParam ?? format(new Date(), "yyyy-MM-dd");
 
   try {
-    // 0. Idempotency short-circuit: if today's basket already exists,
-    //    return it without hitting CoinGecko (saves rate-limit headroom).
+    // 0. Idempotency: if today's basket already exists, return it without
+    //    re-fetching anything.
     const existing = await getBasketRowByDate(basketDate);
     if (existing) {
       return NextResponse.json({
@@ -61,44 +59,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 1. Pull market data once for all strategies
-    const [markets, defiMap, regime] = await Promise.all([
-      getTopMarkets(250),
-      buildDefiMap(),
-      buildMarketRegime(),
-    ]);
+    // 1. Get today's recommendations (creates snapshots if missing).
+    //    These are the EXACT picks shown on the dashboard.
+    const picks = await ensureTodayPicks(basketDate);
 
-    // 2. Score top 100 NON-STABLECOINS (rate-limit guard).
-    //    Pre-filtering stablecoins here saves ~5-10 CoinGecko history calls.
-    const topCoins = markets.filter((c) => !isStablecoin(c)).slice(0, 100);
-    const scoredResults = await Promise.allSettled(
-      topCoins.map(async (coin) => {
-        try {
-          const history = await getCoinHistory(coin.id, 90);
-          const closes = history.prices.map(([, p]) => p);
-          const volumes = history.volumes.map(([, v]) => v);
-          const defi = defiMap.get(coin.symbol.toLowerCase());
-          return scoreCoin(coin, closes, volumes, regime, defi);
-        } catch {
-          const closes = coin.sparkline_in_7d?.price ?? [];
-          const defi = defiMap.get(coin.symbol.toLowerCase());
-          return scoreCoin(coin, closes, [], regime, defi);
-        }
-      })
-    );
-
-    const scored = scoredResults
-      .filter((r) => r.status === "fulfilled")
-      .map((r) => (r as PromiseFulfilledResult<ReturnType<typeof scoreCoin>>).value);
-
-    // 3. Pick 15 UNIQUE coins across the 3 strategies. Conservative goes
-    //    first, growth picks its top 5 excluding conservative's, then
-    //    speculative picks its top 5 excluding both.
-    const basketPicks = pickDailyBasket(scored, regime);
-
+    // 2. Build holdings from the snapshot top5 entries. Use snapshot entry
+    //    prices so the tracker records what the dashboard recommended at
+    //    the moment the picks were locked in.
     const feePct = getFeePct();
-    // Each $200 = fee_usd + crypto_cost.
-    // fee_usd = PER_COIN_USD * feePct / (1 + feePct)   (so net + fee = $200)
     const feeUsd = (PER_COIN_USD * feePct) / (1 + feePct);
     const cryptoCost = PER_COIN_USD - feeUsd;
 
@@ -110,7 +78,8 @@ export async function POST(req: NextRequest) {
     };
 
     for (const strategy of STRATEGIES) {
-      const top5 = basketPicks[strategy];
+      const snapshot = picks[strategy];
+      const top5 = snapshot.top5;
       strategyResults[strategy] = {
         count: top5.length,
         picks: top5.map((a) => a.symbol),
@@ -125,10 +94,10 @@ export async function POST(req: NextRequest) {
           name: asset.name,
           image_url: asset.image ?? null,
           entry_price: asset.price,
-          amount_usd: PER_COIN_USD,                 // gross paid ($200)
-          fee_pct: feePct,                          // e.g. 0.015
-          fee_usd: feeUsd,                          // e.g. ~$2.96
-          coins_held: cryptoCost / asset.price,     // crypto after fee
+          amount_usd: PER_COIN_USD,
+          fee_pct: feePct,
+          fee_usd: feeUsd,
+          coins_held: cryptoCost / asset.price,
           signal: asset.signal,
           score_total: asset.scores.total,
           narrative_tags: asset.narrativeTags ?? [],
@@ -143,7 +112,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Persist
+    // 3. Persist
     const { basket, created } = await createBasket(basketDate, holdings);
 
     return NextResponse.json({
@@ -167,7 +136,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET = convenience for triggering from a browser / scheduled task that prefers GET
+// GET = convenience for triggering from a browser / scheduled task
 export async function GET(req: NextRequest) {
   return POST(req);
 }

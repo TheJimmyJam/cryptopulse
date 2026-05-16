@@ -64,6 +64,20 @@ export async function getLatestSnapshot(
   return (data as SnapshotRow).snapshot;
 }
 
+/**
+ * Fetch all 3 strategies' snapshots for a specific date. Returns the
+ * matching rows (zero to three, never duplicates because of the unique
+ * constraint on (date, strategy)).
+ */
+export async function getSnapshotsByDate(date: string): Promise<SnapshotRow[]> {
+  const { data, error } = await supabase
+    .from("daily_snapshots")
+    .select("*")
+    .eq("date", date);
+  if (error) throw error;
+  return (data as SnapshotRow[]) ?? [];
+}
+
 export async function getSnapshotHistory(
   strategy: Strategy = "growth",
   limit = 30
