@@ -52,6 +52,49 @@ const STABLECOIN_SYMBOLS = new Set<string>([
   "U", // CoinGecko has a coin literally named "U" that is a USD stable
 ]);
 
+// ─── Commodity-backed token exclusion ───────────────────────────────────────
+// Gold-, silver-, and oil-pegged tokens track the spot commodity — they're
+// not crypto growth plays. Same problem as stablecoins, different peg.
+
+const COMMODITY_IDS = new Set<string>([
+  // Gold
+  "tether-gold", "pax-gold", "kinesis-gold", "digix-gold-token",
+  "perth-mint-gold-token", "aurus-gold", "cache-gold", "meld-gold",
+  "asia-broadband", "the-midas-touch-gold", "darma-cash",
+  // Silver
+  "kinesis-silver", "silvertoken",
+  // Oil / other commodities
+  "petro", "petrodollar",
+]);
+
+const COMMODITY_SYMBOLS = new Set<string>([
+  // Gold
+  "XAUT","PAXG","KAU","DGX","AUS","CGT","XAUR","TGOLD","XAU","GOLD",
+  "AUX","AWG","DGT","GLC","GLDX","MTG","PMGT","XGLD",
+  // Silver
+  "KAG","SLVT","XAG","XSLV",
+  // Oil / commodities
+  "PTR","WTI","OIL",
+]);
+
+/**
+ * Detects gold-, silver-, or oil-pegged tokens. Same exclusion principle
+ * as stablecoins — they don't move with crypto, they move with their peg.
+ */
+function isCommodityToken(coin: CoinGeckoMarket): boolean {
+  if (COMMODITY_IDS.has(coin.id)) return true;
+  if (COMMODITY_SYMBOLS.has(coin.symbol.toUpperCase())) return true;
+  // Heuristic: name contains "gold" or "silver" and price is in commodity range
+  const name = coin.name.toLowerCase();
+  if (
+    (name.includes("gold") || name.includes("silver") || name.includes("xau")) &&
+    coin.current_price > 100
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Detects stablecoins via three signals:
  *  1. Known CoinGecko id (`STABLECOIN_IDS`)
@@ -60,17 +103,24 @@ const STABLECOIN_SYMBOLS = new Set<string>([
  *
  * The price-band check catches new/unlisted stablecoins automatically.
  */
-export function isStablecoin(coin: CoinGeckoMarket): boolean {
+function isStablecoinOnly(coin: CoinGeckoMarket): boolean {
   if (STABLECOIN_IDS.has(coin.id)) return true;
   if (STABLECOIN_SYMBOLS.has(coin.symbol.toUpperCase())) return true;
-
-  // Price-pegged check: $0.98–$1.02 with tiny 30d move = stablecoin-like
   const price = coin.current_price ?? 0;
   if (price >= 0.98 && price <= 1.02) {
     const move30d = Math.abs(coin.price_change_percentage_30d_in_currency ?? 0);
-    if (move30d < 2) return true; // less than 2% over 30d at $1 = stable
+    if (move30d < 2) return true;
   }
   return false;
+}
+
+/**
+ * Combined exclusion: stablecoins AND commodity-backed tokens. A $200 buy of
+ * either is effectively buying USD or buying spot gold — neither tests the
+ * strategy's ability to find crypto growth.
+ */
+export function isStablecoin(coin: CoinGeckoMarket): boolean {
+  return isStablecoinOnly(coin) || isCommodityToken(coin);
 }
 
 // Narrative category mapper
@@ -407,39 +457,100 @@ export function scoreCoin(
 
 // ─── Filter + top 5 selector ─────────────────────────────────────────────────
 
-export function filterAndRank(
+/**
+ * Universal exclusion applied to every strategy regardless of tier:
+ * stablecoins, commodity-backed tokens, AVOID-rated coins, and anything
+ * with an extreme risk penalty.
+ */
+function passesUniversalExclusions(a: ScoredAsset): boolean {
+  if (STABLECOIN_IDS.has(a.id)) return false;
+  if (STABLECOIN_SYMBOLS.has(a.symbol.toUpperCase())) return false;
+  if (COMMODITY_IDS.has(a.id)) return false;
+  if (COMMODITY_SYMBOLS.has(a.symbol.toUpperCase())) return false;
+  // Price-pegged catch-all: $0.98–$1.02 + low 30d move = stable-like
+  if (a.price >= 0.98 && a.price <= 1.02 && Math.abs(a.priceChange30d ?? 0) < 2) return false;
+  // Commodity name heuristic
+  const name = a.name.toLowerCase();
+  if ((name.includes("gold") || name.includes("silver") || name.includes("xau")) && a.price > 100) return false;
+  // AVOID signal and extreme-risk excluded everywhere
+  if (a.signal === "AVOID") return false;
+  if (a.scores.riskPenalty >= 12) return false;
+  return true;
+}
+
+/**
+ * Apply a specific strategy's filter tier. Returns coins that satisfy
+ * universal exclusions + that strategy's mcap/volume/RSI thresholds.
+ */
+function applyStrategyFilter(
   assets: ScoredAsset[],
   strategy: Strategy,
   regime: MarketRegime
 ): ScoredAsset[] {
   const f = FILTERS[strategy];
-
-  let filtered = assets.filter((a) => {
-    // Exclude stablecoins — buying $200 of USDT is just holding cash
-    if (STABLECOIN_IDS.has(a.id)) return false;
-    if (STABLECOIN_SYMBOLS.has(a.symbol.toUpperCase())) return false;
-    // Price-pegged catch-all: $0.98–$1.02 + low 30d move = stable-like
-    if (a.price >= 0.98 && a.price <= 1.02 && Math.abs(a.priceChange30d ?? 0) < 2) {
-      return false;
-    }
-
+  return assets.filter((a) => {
+    if (!passesUniversalExclusions(a)) return false;
     if (a.marketCap < f.minMcap) return false;
     if (a.volume24h < f.minVolume) return false;
     if (a.technicals.rsi14 && a.technicals.rsi14 > f.maxRsi) return false;
-    if (a.scores.riskPenalty >= 12) return false; // hard exclude extreme risk
-    if (a.signal === "AVOID") return false;
-    // In risk-off regime, further restrict to lower-penalty assets for conservative
     if (regime.riskLabel === "RISK_OFF" && strategy === "conservative" && a.scores.riskPenalty > 5) return false;
     return true;
   });
+}
 
-  // Strategy-specific universe
-  if (strategy === "conservative") {
-    filtered = filtered.filter((a) => a.marketCap > 10_000_000_000);
-  } else if (strategy === "speculative") {
-    // No additional filter beyond minimums above
+/**
+ * Pick the top 5 coins for a strategy, with progressive backfill if the
+ * strict filter returns fewer than 5.
+ *
+ * Backfill order:
+ *   1. Strict filter for this strategy
+ *   2. If short: pull from the next-looser strategy's pool
+ *      (conservative → growth → speculative)
+ *   3. If still short: pull from ALL coins that pass universal exclusions
+ *      (just stablecoin/commodity/AVOID exclusions — no mcap/volume/RSI gate)
+ *
+ * Each layer's additions are sorted by score and de-duped against prior layers.
+ */
+export function filterAndRank(
+  assets: ScoredAsset[],
+  strategy: Strategy,
+  regime: MarketRegime
+): ScoredAsset[] {
+  const TARGET = 5;
+  const TIERS: Strategy[] =
+    strategy === "conservative"
+      ? ["conservative", "growth", "speculative"]
+      : strategy === "growth"
+      ? ["growth", "speculative"]
+      : ["speculative"];
+
+  const picked: ScoredAsset[] = [];
+  const seen = new Set<string>();
+
+  for (const tier of TIERS) {
+    if (picked.length >= TARGET) break;
+    const tierPicks = applyStrategyFilter(assets, tier, regime)
+      .filter((a) => !seen.has(a.id))
+      .sort((a, b) => b.scores.total - a.scores.total);
+    for (const p of tierPicks) {
+      if (picked.length >= TARGET) break;
+      picked.push(p);
+      seen.add(p.id);
+    }
   }
 
-  filtered.sort((a, b) => b.scores.total - a.scores.total);
-  return filtered.slice(0, 5);
+  // Final fallback: if still short, pull from anything that passes universal
+  // exclusions (drop all mcap/volume/RSI thresholds). Last-resort backfill.
+  if (picked.length < TARGET) {
+    const fallback = assets
+      .filter((a) => passesUniversalExclusions(a) && !seen.has(a.id))
+      .sort((a, b) => b.scores.total - a.scores.total);
+    for (const p of fallback) {
+      if (picked.length >= TARGET) break;
+      picked.push(p);
+      seen.add(p.id);
+    }
+  }
+
+  return picked.slice(0, TARGET);
 }
