@@ -13,13 +13,23 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Client for browser (anon key)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Custom fetch that disables Next.js's automatic fetch caching.
+// Without this, an empty result gets cached forever and the list endpoint
+// keeps showing "no baskets" even after rows are inserted.
+const noCacheFetch: typeof fetch = (input, init) =>
+  fetch(input, { ...init, cache: "no-store" });
+
+// Client for browser + server (anon key, RLS-bound, no fetch cache)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: noCacheFetch },
+});
 
 // Server-only client with elevated permissions
 export function getSupabaseAdmin() {
   if (!supabaseServiceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY not set");
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    global: { fetch: noCacheFetch },
+  });
 }
 
 // ─── Snapshot CRUD ───────────────────────────────────────────────────────────
