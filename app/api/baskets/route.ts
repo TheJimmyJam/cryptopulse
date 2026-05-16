@@ -58,13 +58,18 @@ export async function GET() {
       let winners = 0;
       let losers = 0;
       let anyMissing = false;
+      let totalFees = 0;
+      let totalCryptoCost = 0;
 
       for (const h of basketHoldings) {
+        totalFees += h.fee_usd ?? 0;
+        totalCryptoCost += h.amount_usd - (h.fee_usd ?? 0);
         const cp = currentPrices[h.coin_id];
         if (typeof cp === "number" && cp > 0) {
           const cv = h.coins_held * cp;
           currentValue += cv;
           priced += 1;
+          // Win/loss measured against GROSS paid (amount_usd) — true after-fee P&L
           if (cv > h.amount_usd) winners += 1;
           else if (cv < h.amount_usd) losers += 1;
         } else {
@@ -83,6 +88,8 @@ export async function GET() {
       return {
         basket_date: b.basket_date,
         total_invested: invested,
+        total_fees: totalFees,
+        total_crypto_cost: totalCryptoCost,
         current_value: fullyPriced ? currentValue : priced > 0 ? currentValue : null,
         pnl_usd: pnlUsd,
         pnl_pct: pnlPct,
@@ -96,6 +103,7 @@ export async function GET() {
 
     // Portfolio-level summary across all baskets
     const totalInvested = summaries.reduce((s, b) => s + b.total_invested, 0);
+    const totalFeesAll = summaries.reduce((s, b) => s + (b.total_fees ?? 0), 0);
     const totalCurrent = summaries.reduce(
       (s, b) => s + (b.current_value ?? b.total_invested),
       0
@@ -107,6 +115,7 @@ export async function GET() {
       baskets: summaries,
       portfolio: {
         total_invested: totalInvested,
+        total_fees: totalFeesAll,
         current_value: totalCurrent,
         pnl_usd: totalPnl,
         pnl_pct: totalPnlPct,

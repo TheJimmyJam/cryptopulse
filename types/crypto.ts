@@ -221,8 +221,10 @@ export interface BasketHoldingRow {
   name: string;
   image_url: string | null;
   entry_price: number;
-  amount_usd: number;            // 200
-  coins_held: number;            // amount_usd / entry_price
+  amount_usd: number;            // 200 (gross paid, includes fee)
+  fee_pct: number;               // e.g. 0.015 for 1.5%
+  fee_usd: number;               // fee portion of amount_usd
+  coins_held: number;            // (amount_usd - fee_usd) / entry_price
   signal: SignalType | null;
   score_total: number | null;
   narrative_tags: string[];
@@ -239,9 +241,11 @@ export interface BasketHoldingEnriched extends BasketHoldingRow {
 // Summary row shown in the "all baskets" list view
 export interface DailyBasketSummary {
   basket_date: string;
-  total_invested: number;
+  total_invested: number;        // gross paid (includes fees)
+  total_fees: number;            // total $ paid in fees
+  total_crypto_cost: number;     // amount that actually bought crypto
   current_value: number | null;
-  pnl_usd: number | null;
+  pnl_usd: number | null;        // current_value - total_invested (true after-fee P&L)
   pnl_pct: number | null;
   num_holdings: number;
   num_priced: number;
@@ -255,9 +259,11 @@ export interface BasketDetail {
   basket: DailyBasketRow;
   holdings: BasketHoldingEnriched[];
   summary: {
-    total_invested: number;
+    total_invested: number;      // gross (includes fees)
+    total_fees: number;          // total $ paid in fees
+    total_crypto_cost: number;   // amount that actually bought crypto
     current_value: number;
-    pnl_usd: number;
+    pnl_usd: number;             // current_value - total_invested (true after-fee P&L)
     pnl_pct: number;
     num_holdings: number;
     num_priced: number;
@@ -265,6 +271,7 @@ export interface BasketDetail {
     losers: number;
     by_strategy: Record<Strategy, {
       invested: number;
+      fees: number;
       current_value: number;
       pnl_usd: number;
       pnl_pct: number;

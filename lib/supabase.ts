@@ -127,8 +127,10 @@ export interface NewBasketHoldingInput {
   name: string;
   image_url: string | null;
   entry_price: number;
-  amount_usd: number;
-  coins_held: number;
+  amount_usd: number;       // gross paid (fee + crypto)
+  fee_pct: number;          // e.g. 0.015 for 1.5%
+  fee_usd: number;          // dollar amount of fee
+  coins_held: number;       // (amount_usd - fee_usd) / entry_price
   signal: string | null;
   score_total: number | null;
   narrative_tags: string[];

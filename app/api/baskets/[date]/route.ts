@@ -66,27 +66,30 @@ export async function GET(
 
     // Totals
     let totalInvested = 0;
+    let totalFees = 0;
     let totalCurrent = 0;
     let winners = 0;
     let losers = 0;
     let priced = 0;
-    const byStrategy: Record<Strategy, { invested: number; current_value: number; pnl_usd: number; pnl_pct: number }> = {
-      conservative: { invested: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
-      growth: { invested: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
-      speculative: { invested: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
+    const byStrategy: Record<Strategy, { invested: number; fees: number; current_value: number; pnl_usd: number; pnl_pct: number }> = {
+      conservative: { invested: 0, fees: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
+      growth: { invested: 0, fees: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
+      speculative: { invested: 0, fees: 0, current_value: 0, pnl_usd: 0, pnl_pct: 0 },
     };
 
     for (const h of enriched) {
       totalInvested += h.amount_usd;
+      totalFees += h.fee_usd ?? 0;
       byStrategy[h.strategy].invested += h.amount_usd;
+      byStrategy[h.strategy].fees += h.fee_usd ?? 0;
       if (h.currentValue !== null) {
         totalCurrent += h.currentValue;
         byStrategy[h.strategy].current_value += h.currentValue;
         priced += 1;
+        // Win/loss measured against GROSS paid — true after-fee P&L
         if (h.currentValue > h.amount_usd) winners += 1;
         else if (h.currentValue < h.amount_usd) losers += 1;
       } else {
-        // For strategy totals, fall back to entry amount when no price is available
         byStrategy[h.strategy].current_value += h.amount_usd;
       }
     }
@@ -112,6 +115,8 @@ export async function GET(
       holdings: enriched,
       summary: {
         total_invested: totalInvested,
+        total_fees: totalFees,
+        total_crypto_cost: totalInvested - totalFees,
         current_value: currentValue,
         pnl_usd: pnlUsd,
         pnl_pct: pnlPct,

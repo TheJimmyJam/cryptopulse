@@ -86,8 +86,10 @@ create table if not exists basket_holdings (
   name            text not null,
   image_url       text,
   entry_price     numeric not null,
-  amount_usd      numeric not null default 200,
-  coins_held      numeric not null,
+  amount_usd      numeric not null default 200,   -- gross paid (fee + crypto)
+  fee_pct         numeric not null default 0,     -- % of amount_usd that was fee
+  fee_usd         numeric not null default 0,     -- $ amount of fee
+  coins_held      numeric not null,               -- (amount_usd - fee_usd) / entry_price
   signal          text,
   score_total     numeric,
   narrative_tags  text[],

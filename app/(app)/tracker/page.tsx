@@ -14,6 +14,7 @@ interface BasketsListResponse {
   baskets: DailyBasketSummary[];
   portfolio?: {
     total_invested: number;
+    total_fees?: number;
     current_value: number;
     pnl_usd: number;
     pnl_pct: number;
@@ -215,7 +216,15 @@ function BasketDetailView({
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Invested" value={fmt$(summary.total_invested, 0)} />
+        <StatCard
+          label="Gross Paid"
+          value={fmt$(summary.total_invested, 0)}
+          sub={
+            <span className="text-slate-500">
+              {fmt$(summary.total_fees)} fees · {fmt$(summary.total_crypto_cost)} crypto
+            </span>
+          }
+        />
         <StatCard
           label="Current Value"
           value={fmt$(summary.current_value, 2)}
@@ -284,7 +293,7 @@ function BasketDetailView({
 
       {/* Holdings table */}
       <div className="overflow-x-auto rounded-xl border border-[#1e2535]">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[760px]">
           <thead>
             <tr className="bg-[#0f1117] border-b border-[#1e2535]">
               {[
@@ -292,6 +301,7 @@ function BasketDetailView({
                 ["#", "text-left"],
                 ["Coin", "text-left"],
                 ["Entry Price", "text-right"],
+                ["Fee", "text-right"],
                 ["Current Price", "text-right"],
                 ["$200 → Value", "text-right"],
                 ["P&L", "text-right"],
@@ -355,6 +365,10 @@ function BasketDetailView({
                   </td>
                   <td className="px-4 py-3 text-right text-slate-300 text-xs font-mono whitespace-nowrap">
                     {fmt$(h.entry_price, h.entry_price < 1 ? 6 : 2)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
+                    <div className="text-slate-400 font-mono">{fmt$(h.fee_usd)}</div>
+                    <div className="text-slate-600 text-[10px]">{(h.fee_pct * 100).toFixed(2)}%</div>
                   </td>
                   <td className="px-4 py-3 text-right text-xs font-mono whitespace-nowrap">
                     {h.currentPrice !== null ? (
@@ -452,7 +466,7 @@ function BasketsListView({
         <div>
           <h1 className="text-2xl font-black text-white">Daily Baskets</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            $3,000/day paper-traded · $200 across each of 15 coins (top 5 from each strategy) · Click a day to drill in
+            $3,000/day paper-traded · $200 per coin (~1.5% retail fee included) across 15 unique picks · Click a day to drill in
           </p>
         </div>
         <div className="flex gap-2 self-start">
@@ -490,9 +504,14 @@ function BasketsListView({
       {portfolio && portfolio.num_baskets > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard
-            label="Total Invested"
+            label="Total Paid"
             value={fmt$(portfolio.total_invested, 0)}
-            sub={<span className="text-slate-500">{portfolio.num_baskets} days</span>}
+            sub={
+              <span className="text-slate-500">
+                {portfolio.num_baskets} days
+                {portfolio.total_fees ? ` · ${fmt$(portfolio.total_fees, 0)} fees` : ""}
+              </span>
+            }
           />
           <StatCard
             label="Current Value"
@@ -637,8 +656,11 @@ function BasketsListView({
         <p className="text-xs text-amber-200/60 leading-relaxed">
           <strong className="text-amber-400">Paper Trading Only:</strong> Each daily basket
           simulates buying $200 of the top 5 coins from each of the conservative, growth, and
-          speculative strategies at their prices when the basket was created. No real money
-          is involved. Past performance ≠ future results.
+          speculative strategies at their prices when the basket was created. A retail
+          exchange fee (~1.5% — Coinbase Simple / Kraken Instant level) is baked into every
+          purchase, so the $200 reflects what you'd actually pay at checkout. P&L is measured
+          against gross paid, not the post-fee crypto amount. No real money involved. Past
+          performance ≠ future results.
         </p>
       </div>
     </div>

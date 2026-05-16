@@ -18,6 +18,18 @@ export const maxDuration = 300; // 5 min — heavy CoinGecko fetches
 const STRATEGIES: Strategy[] = ["conservative", "growth", "speculative"];
 const PER_COIN_USD = 200;
 
+// Realistic retail buying fee for small spot purchases. Most US retail users
+// buy through Coinbase Simple/Kraken Instant/Gemini at ~1.49%. Configurable
+// via PAPER_TRADE_FEE_PCT env var (e.g. "0.005" for 0.5% Coinbase Advanced).
+const DEFAULT_FEE_PCT = 0.015;
+function getFeePct(): number {
+  const raw = process.env.PAPER_TRADE_FEE_PCT;
+  if (!raw) return DEFAULT_FEE_PCT;
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 0.1) return DEFAULT_FEE_PCT;
+  return n;
+}
+
 /**
  * POST /api/baskets/buy
  *
@@ -84,6 +96,12 @@ export async function POST(req: NextRequest) {
     //    speculative picks its top 5 excluding both.
     const basketPicks = pickDailyBasket(scored, regime);
 
+    const feePct = getFeePct();
+    // Each $200 = fee_usd + crypto_cost.
+    // fee_usd = PER_COIN_USD * feePct / (1 + feePct)   (so net + fee = $200)
+    const feeUsd = (PER_COIN_USD * feePct) / (1 + feePct);
+    const cryptoCost = PER_COIN_USD - feeUsd;
+
     const holdings: NewBasketHoldingInput[] = [];
     const strategyResults: Record<Strategy, { count: number; picks: string[] }> = {
       conservative: { count: 0, picks: [] },
@@ -107,8 +125,10 @@ export async function POST(req: NextRequest) {
           name: asset.name,
           image_url: asset.image ?? null,
           entry_price: asset.price,
-          amount_usd: PER_COIN_USD,
-          coins_held: PER_COIN_USD / asset.price,
+          amount_usd: PER_COIN_USD,                 // gross paid ($200)
+          fee_pct: feePct,                          // e.g. 0.015
+          fee_usd: feeUsd,                          // e.g. ~$2.96
+          coins_held: cryptoCost / asset.price,     // crypto after fee
           signal: asset.signal,
           score_total: asset.scores.total,
           narrative_tags: asset.narrativeTags ?? [],
