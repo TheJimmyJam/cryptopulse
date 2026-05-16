@@ -197,3 +197,77 @@ export interface TrackerPickEnriched extends TrackerPick {
   pnlPct: number | null;        // pnlUsd / amount_usd * 100
   daysSincePick: number;
 }
+
+// ─── Daily Baskets ($3000/day paper-trade portfolios) ──────────────────────
+
+export interface DailyBasketRow {
+  id: string;
+  basket_date: string;           // "2026-05-16"
+  total_invested: number;        // 3000
+  per_coin_amount: number;       // 200
+  num_coins: number;             // 15
+  notes: string | null;
+  created_at: string;
+}
+
+export interface BasketHoldingRow {
+  id: string;
+  basket_id: string;
+  basket_date: string;
+  strategy: Strategy;
+  strategy_rank: number;         // 1–5
+  coin_id: string;
+  symbol: string;
+  name: string;
+  image_url: string | null;
+  entry_price: number;
+  amount_usd: number;            // 200
+  coins_held: number;            // amount_usd / entry_price
+  signal: SignalType | null;
+  score_total: number | null;
+  narrative_tags: string[];
+  created_at: string;
+}
+
+export interface BasketHoldingEnriched extends BasketHoldingRow {
+  currentPrice: number | null;
+  currentValue: number | null;
+  pnlUsd: number | null;
+  pnlPct: number | null;
+}
+
+// Summary row shown in the "all baskets" list view
+export interface DailyBasketSummary {
+  basket_date: string;
+  total_invested: number;
+  current_value: number | null;
+  pnl_usd: number | null;
+  pnl_pct: number | null;
+  num_holdings: number;
+  num_priced: number;
+  days_since: number;
+  winners: number;
+  losers: number;
+}
+
+// Full drill-in payload for /api/baskets/[date]
+export interface BasketDetail {
+  basket: DailyBasketRow;
+  holdings: BasketHoldingEnriched[];
+  summary: {
+    total_invested: number;
+    current_value: number;
+    pnl_usd: number;
+    pnl_pct: number;
+    num_holdings: number;
+    num_priced: number;
+    winners: number;
+    losers: number;
+    by_strategy: Record<Strategy, {
+      invested: number;
+      current_value: number;
+      pnl_usd: number;
+      pnl_pct: number;
+    }>;
+  };
+}
