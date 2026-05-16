@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
-import { scoreCoin, filterAndRank } from "@/lib/scoring";
+import { scoreCoin, filterAndRank, isStablecoin } from "@/lib/scoring";
 import {
   createBasket,
   getBasketRowByDate,
@@ -56,8 +56,9 @@ export async function POST(req: NextRequest) {
       buildMarketRegime(),
     ]);
 
-    // 2. Score top 100 coins (rate-limit guard)
-    const topCoins = markets.slice(0, 100);
+    // 2. Score top 100 NON-STABLECOINS (rate-limit guard).
+    //    Pre-filtering stablecoins here saves ~5-10 CoinGecko history calls.
+    const topCoins = markets.filter((c) => !isStablecoin(c)).slice(0, 100);
     const scoredResults = await Promise.allSettled(
       topCoins.map(async (coin) => {
         try {

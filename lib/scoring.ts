@@ -26,6 +26,53 @@ const FILTERS = {
   speculative:  { minMcap: 100_000_000,    minVolume: 20_000_000,  maxRsi: 85 },
 };
 
+// ─── Stablecoin exclusion ───────────────────────────────────────────────────
+// Stablecoins shouldn't appear in growth/speculative/conservative picks —
+// buying $200 of USDT is equivalent to holding cash.
+
+const STABLECOIN_IDS = new Set<string>([
+  // USD pegs
+  "tether", "usd-coin", "dai", "true-usd", "first-digital-usd", "paypal-usd",
+  "frax", "usdd", "binance-usd", "tether-eurt", "stasis-eurs", "gemini-dollar",
+  "liquity-usd", "magic-internet-money", "fei-usd", "neutrino", "origin-dollar",
+  "ethena-usde", "ondo-us-dollar-yield", "usual-usd", "mountain-protocol-usdm",
+  "world-liberty-financial-usd", "global-dollar", "m-by-m0",
+  // Bridged / wrapped USD
+  "bridged-usdc-polygon-pos-bridge", "bridged-usdt", "usd1-wlfi",
+  // Stablecoin symbol fallbacks (some have weird ids)
+  "usdj", "tusd", "lusd", "susd", "gusd", "musd", "rsv", "dusd", "ust",
+]);
+
+const STABLECOIN_SYMBOLS = new Set<string>([
+  "USDT","USDC","DAI","BUSD","TUSD","FDUSD","PYUSD","FRAX","USDD","USDE",
+  "USDP","USDJ","GUSD","LUSD","SUSD","MUSD","UST","USTC","USDX","USDB",
+  "USDM","USDY","USDS","RSV","DUSD","CUSD","HUSD","OUSD","USDK","USDN",
+  "USD1","USDG","USDR","USDT.E","USDC.E","USR","USD0","USDF","USDO",
+  "EURS","EURT","EURC","EURI","STEUR","USN","CRVUSD","GHO","DJED",
+  "U", // CoinGecko has a coin literally named "U" that is a USD stable
+]);
+
+/**
+ * Detects stablecoins via three signals:
+ *  1. Known CoinGecko id (`STABLECOIN_IDS`)
+ *  2. Known symbol (`STABLECOIN_SYMBOLS`)
+ *  3. Price within ±2% of $1 AND very low 30d volatility (cash-like)
+ *
+ * The price-band check catches new/unlisted stablecoins automatically.
+ */
+export function isStablecoin(coin: CoinGeckoMarket): boolean {
+  if (STABLECOIN_IDS.has(coin.id)) return true;
+  if (STABLECOIN_SYMBOLS.has(coin.symbol.toUpperCase())) return true;
+
+  // Price-pegged check: $0.98–$1.02 with tiny 30d move = stablecoin-like
+  const price = coin.current_price ?? 0;
+  if (price >= 0.98 && price <= 1.02) {
+    const move30d = Math.abs(coin.price_change_percentage_30d_in_currency ?? 0);
+    if (move30d < 2) return true; // less than 2% over 30d at $1 = stable
+  }
+  return false;
+}
+
 // Narrative category mapper
 const NARRATIVE_MAP: Record<string, string[]> = {
   bitcoin:   ["store-of-value", "digital-gold"],
@@ -368,6 +415,14 @@ export function filterAndRank(
   const f = FILTERS[strategy];
 
   let filtered = assets.filter((a) => {
+    // Exclude stablecoins — buying $200 of USDT is just holding cash
+    if (STABLECOIN_IDS.has(a.id)) return false;
+    if (STABLECOIN_SYMBOLS.has(a.symbol.toUpperCase())) return false;
+    // Price-pegged catch-all: $0.98–$1.02 + low 30d move = stable-like
+    if (a.price >= 0.98 && a.price <= 1.02 && Math.abs(a.priceChange30d ?? 0) < 2) {
+      return false;
+    }
+
     if (a.marketCap < f.minMcap) return false;
     if (a.volume24h < f.minVolume) return false;
     if (a.technicals.rsi14 && a.technicals.rsi14 > f.maxRsi) return false;
