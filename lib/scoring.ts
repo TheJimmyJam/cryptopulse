@@ -514,9 +514,15 @@ function applyStrategyFilter(
 export function filterAndRank(
   assets: ScoredAsset[],
   strategy: Strategy,
-  regime: MarketRegime
+  regime: MarketRegime,
+  excludeIds: Set<string> = new Set()
 ): ScoredAsset[] {
   const TARGET = 5;
+  // Strip excluded coins from the candidate pool up-front so they never
+  // appear in any tier — strict, backfill, or fallback.
+  if (excludeIds.size > 0) {
+    assets = assets.filter((a) => !excludeIds.has(a.id));
+  }
   const TIERS: Strategy[] =
     strategy === "conservative"
       ? ["conservative", "growth", "speculative"]
@@ -553,4 +559,36 @@ export function filterAndRank(
   }
 
   return picked.slice(0, TARGET);
+}
+
+// ─── Daily basket: 15 unique coins across 3 strategies ──────────────────────
+/**
+ * Picks a full daily basket (5 conservative + 5 growth + 5 speculative) where
+ * no coin appears in more than one strategy. Order matters: conservative goes
+ * first (most discerning filter), growth picks its top 5 excluding
+ * conservative's, then speculative picks its top 5 excluding the other two.
+ *
+ * If a strategy's strict filter is short, backfill kicks in via
+ * `filterAndRank`'s built-in fallback tiers — but the universal exclusion set
+ * ensures we never duplicate a coin already grabbed by an earlier strategy.
+ */
+export function pickDailyBasket(
+  assets: ScoredAsset[],
+  regime: MarketRegime
+): {
+  conservative: ScoredAsset[];
+  growth: ScoredAsset[];
+  speculative: ScoredAsset[];
+} {
+  const excluded = new Set<string>();
+
+  const conservative = filterAndRank(assets, "conservative", regime, excluded);
+  conservative.forEach((a) => excluded.add(a.id));
+
+  const growth = filterAndRank(assets, "growth", regime, excluded);
+  growth.forEach((a) => excluded.add(a.id));
+
+  const speculative = filterAndRank(assets, "speculative", regime, excluded);
+
+  return { conservative, growth, speculative };
 }

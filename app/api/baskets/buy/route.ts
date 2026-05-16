@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
-import { scoreCoin, filterAndRank, isStablecoin } from "@/lib/scoring";
+import { scoreCoin, pickDailyBasket, isStablecoin } from "@/lib/scoring";
 import {
   createBasket,
   getBasketRowByDate,
@@ -79,7 +79,11 @@ export async function POST(req: NextRequest) {
       .filter((r) => r.status === "fulfilled")
       .map((r) => (r as PromiseFulfilledResult<ReturnType<typeof scoreCoin>>).value);
 
-    // 3. For each strategy, take its top 5 and build holding inputs
+    // 3. Pick 15 UNIQUE coins across the 3 strategies. Conservative goes
+    //    first, growth picks its top 5 excluding conservative's, then
+    //    speculative picks its top 5 excluding both.
+    const basketPicks = pickDailyBasket(scored, regime);
+
     const holdings: NewBasketHoldingInput[] = [];
     const strategyResults: Record<Strategy, { count: number; picks: string[] }> = {
       conservative: { count: 0, picks: [] },
@@ -88,7 +92,7 @@ export async function POST(req: NextRequest) {
     };
 
     for (const strategy of STRATEGIES) {
-      const top5 = filterAndRank(scored, strategy, regime);
+      const top5 = basketPicks[strategy];
       strategyResults[strategy] = {
         count: top5.length,
         picks: top5.map((a) => a.symbol),
