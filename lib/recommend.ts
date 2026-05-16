@@ -1,7 +1,7 @@
 import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
-import { scoreCoin, pickDailyBasket, isStablecoin } from "@/lib/scoring";
+import { scoreCoin, pickDailyBasket, isBasketExcluded } from "@/lib/scoring";
 import { getSnapshotsByDate, saveSnapshot } from "@/lib/supabase";
 import { DailySnapshot, Strategy } from "@/types/crypto";
 
@@ -44,9 +44,10 @@ export async function ensureTodayPicks(today: string): Promise<DailyPicks> {
     buildMarketRegime(),
   ]);
 
-  // Pre-filter stablecoins/commodities so we don't waste history calls
+  // Pre-filter stablecoins / commodities / tokenized RWAs so we don't waste
+  // history calls on coins that will be excluded anyway.
   const TOP_N_HISTORY = 100;
-  const topCoins = markets.filter((c) => !isStablecoin(c)).slice(0, TOP_N_HISTORY);
+  const topCoins = markets.filter((c) => !isBasketExcluded(c)).slice(0, TOP_N_HISTORY);
 
   const scoredResults = await Promise.allSettled(
     topCoins.map(async (coin) => {

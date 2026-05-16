@@ -95,6 +95,75 @@ function isCommodityToken(coin: CoinGeckoMarket): boolean {
   return false;
 }
 
+// ─── Tokenized Real-World Asset (RWA) exclusion ─────────────────────────────
+// Tokenized mortgages, HELOCs, treasury bills, T-bonds, real-estate funds, and
+// other off-chain debt/equity instruments. They track their underlying real
+// asset (interest rates, mortgage performance, etc.), not crypto market action,
+// so they pollute "best crypto pick" lists the same way stablecoins do.
+
+const RWA_IDS = new Set<string>([
+  // Figure protocol tokenized mortgages / HELOCs
+  "figr-heloc", "figr_heloc", "figure-heloc", "figure-dart",
+  // Tokenized US Treasuries / money-market funds
+  "ondo-short-term-us-government-bond-fund", "ondo-us-government-money-market-fund",
+  "ondo-short-term-us-treasuries", "ondo-us-treasuries", "ondo-ousg",
+  "blackrock-usd-institutional-digital-liquidity-fund", "buidl",
+  "hashnote-us-yield-coin", "matrixdock-short-term-treasury-bill",
+  "openeden-tbill", "openeden-t-bill", "open-eden-tbill",
+  "superstate-short-duration-us-government-securities-fund",
+  "franklin-onchain-us-government-money-fund",
+  "maple-finance-syrupusdc",
+  "spiko-eu-tbills-money-market-fund", "spiko-us-tbills-money-market-fund",
+  // Tokenized real estate
+  "realt", "lofty-ai", "propy",
+  // Tokenized equities/securities
+  "tokenized-stocks", "polymath", "securitize",
+]);
+
+const RWA_SYMBOLS = new Set<string>([
+  // Tokenized debt / mortgage / HELOC
+  "FIGR_HELOC", "FIGRHELOC", "FIGR-HELOC", "FIGR", "DART",
+  // Tokenized treasuries / T-bills / bond funds
+  "OUSG", "USTB", "BUIDL", "USYC", "STBT", "TBILL", "TBL",
+  "FOBXX", "BENJI", "USCC", "USCY", "USDM", "USDY",
+  "SYRUPUSDC", "SYRUP",
+  // Tokenized real estate / property
+  "REIT", "RWA", "PROPS", "PRO",
+]);
+
+/**
+ * Detects tokenized real-world assets. Combines a curated id/symbol list
+ * with name-based heuristics — anything containing "heloc", "treasury",
+ * "t-bill", "tokenized", "mortgage", "reit", or a clear RWA prefix is out.
+ */
+function isRwaToken(coin: CoinGeckoMarket): boolean {
+  if (RWA_IDS.has(coin.id)) return true;
+  const sym = coin.symbol.toUpperCase();
+  if (RWA_SYMBOLS.has(sym)) return true;
+  // Name-based heuristics
+  const name = coin.name.toLowerCase();
+  if (
+    name.includes("heloc") ||
+    name.includes("mortgage") ||
+    name.includes("treasury") ||
+    name.includes("t-bill") ||
+    name.includes("t bill") ||
+    name.includes("tbill") ||
+    name.includes("tokenized") ||
+    name.includes("reit") ||
+    name.includes("dart pool") ||
+    name.includes("bond fund") ||
+    name.includes("money market") ||
+    name.includes("government fund") ||
+    name.includes("yield coin")
+  ) {
+    return true;
+  }
+  // Symbol-prefix heuristics for Figure-style tokens (FIGR_*, FIGURE_*)
+  if (sym.startsWith("FIGR_") || sym.startsWith("FIGURE_")) return true;
+  return false;
+}
+
 /**
  * Detects stablecoins via three signals:
  *  1. Known CoinGecko id (`STABLECOIN_IDS`)
@@ -115,13 +184,20 @@ function isStablecoinOnly(coin: CoinGeckoMarket): boolean {
 }
 
 /**
- * Combined exclusion: stablecoins AND commodity-backed tokens. A $200 buy of
- * either is effectively buying USD or buying spot gold — neither tests the
- * strategy's ability to find crypto growth.
+ * Combined exclusion: stablecoins, commodity-backed tokens, and tokenized
+ * real-world assets (mortgages, treasuries, REITs, etc.). A $200 buy of any
+ * of these is buying USD / gold / a bond / a mortgage — none of them test
+ * the strategy's ability to find crypto growth.
  */
-export function isStablecoin(coin: CoinGeckoMarket): boolean {
-  return isStablecoinOnly(coin) || isCommodityToken(coin);
+export function isBasketExcluded(coin: CoinGeckoMarket): boolean {
+  return isStablecoinOnly(coin) || isCommodityToken(coin) || isRwaToken(coin);
 }
+
+/**
+ * @deprecated Use `isBasketExcluded` — name was historically narrow.
+ *             Retained for back-compat of external imports.
+ */
+export const isStablecoin = isBasketExcluded;
 
 // Narrative category mapper
 const NARRATIVE_MAP: Record<string, string[]> = {
@@ -459,20 +535,22 @@ export function scoreCoin(
 
 /**
  * Universal exclusion applied to every strategy regardless of tier:
- * stablecoins, commodity-backed tokens, AVOID-rated coins, and anything
- * with an extreme risk penalty.
+ * stablecoins, commodity-backed tokens, tokenized RWAs, AVOID-rated coins,
+ * and anything with an extreme risk penalty.
+ *
+ * Reconstructs a CoinGeckoMarket-shaped object from the ScoredAsset so the
+ * existing bucket checks (isBasketExcluded) can be reused — keeps a single
+ * source of truth for the exclusion logic.
  */
 function passesUniversalExclusions(a: ScoredAsset): boolean {
-  if (STABLECOIN_IDS.has(a.id)) return false;
-  if (STABLECOIN_SYMBOLS.has(a.symbol.toUpperCase())) return false;
-  if (COMMODITY_IDS.has(a.id)) return false;
-  if (COMMODITY_SYMBOLS.has(a.symbol.toUpperCase())) return false;
-  // Price-pegged catch-all: $0.98–$1.02 + low 30d move = stable-like
-  if (a.price >= 0.98 && a.price <= 1.02 && Math.abs(a.priceChange30d ?? 0) < 2) return false;
-  // Commodity name heuristic
-  const name = a.name.toLowerCase();
-  if ((name.includes("gold") || name.includes("silver") || name.includes("xau")) && a.price > 100) return false;
-  // AVOID signal and extreme-risk excluded everywhere
+  const fakeCoin = {
+    id: a.id,
+    symbol: a.symbol,
+    name: a.name,
+    current_price: a.price,
+    price_change_percentage_30d_in_currency: a.priceChange30d,
+  } as unknown as CoinGeckoMarket;
+  if (isBasketExcluded(fakeCoin)) return false;
   if (a.signal === "AVOID") return false;
   if (a.scores.riskPenalty >= 12) return false;
   return true;
