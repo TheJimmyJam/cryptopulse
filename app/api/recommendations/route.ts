@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
-import { scoreCoin, filterAndRank } from "@/lib/scoring";
-import { saveSnapshot, getLatestSnapshot, saveTrackerPicks } from "@/lib/supabase";
+import { scoreCoin, pickDailyBasket, isStablecoin } from "@/lib/scoring";
+import { saveSnapshot, getLatestSnapshot } from "@/lib/supabase";
 import { DailySnapshot, Strategy } from "@/types/crypto";
 import { format } from "date-fns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const ALL_STRATEGIES: Strategy[] = ["conservative", "growth", "speculative"];
 
 // GET /api/recommendations?strategy=growth&refresh=false
 export async function GET(req: NextRequest) {
@@ -31,10 +33,10 @@ export async function GET(req: NextRequest) {
     buildMarketRegime(),
   ]);
 
-  // 3. Score each coin
-  // We only fetch full OHLCV history for top 100 (to stay within rate limits)
+  // 3. Pre-filter stablecoins + commodity tokens BEFORE scoring (saves API calls).
+  //    Score the top 100 non-excluded coins.
   const TOP_N_HISTORY = 100;
-  const topCoins = markets.slice(0, TOP_N_HISTORY);
+  const topCoins = markets.filter((c) => !isStablecoin(c)).slice(0, TOP_N_HISTORY);
 
   const scoredCoins = await Promise.allSettled(
     topCoins.map(async (coin) => {
@@ -45,7 +47,6 @@ export async function GET(req: NextRequest) {
         const defi = defiMap.get(coin.symbol.toLowerCase());
         return scoreCoin(coin, closes, volumes, regime, defi);
       } catch {
-        // If history fetch fails, score with sparkline data only
         const closes = coin.sparkline_in_7d?.price ?? [];
         const defi = defiMap.get(coin.symbol.toLowerCase());
         return scoreCoin(coin, closes, [], regime, defi);
@@ -57,47 +58,29 @@ export async function GET(req: NextRequest) {
     .filter((r) => r.status === "fulfilled")
     .map((r) => (r as PromiseFulfilledResult<ReturnType<typeof scoreCoin>>).value);
 
-  // 4. Filter + rank to top 5
-  const top5 = filterAndRank(validScores, strategy, regime);
+  // 4. Pick all 3 strategies at once so cross-strategy dedup applies.
+  //    pickDailyBasket() handles backfill from looser tiers + 15 unique coins.
+  const basket = pickDailyBasket(validScores, regime);
 
-  const snapshot: DailySnapshot = {
-    date: today,
-    top5,
-    marketRegime: regime,
-    generatedAt: new Date().toISOString(),
-    strategy,
+  const generatedAt = new Date().toISOString();
+  const snapshots: Record<Strategy, DailySnapshot> = {
+    conservative: { date: today, top5: basket.conservative, marketRegime: regime, generatedAt, strategy: "conservative" },
+    growth:       { date: today, top5: basket.growth,       marketRegime: regime, generatedAt, strategy: "growth"       },
+    speculative:  { date: today, top5: basket.speculative,  marketRegime: regime, generatedAt, strategy: "speculative"  },
   };
 
-  // 5. Persist snapshot to Supabase
-  try {
-    await saveSnapshot(snapshot);
-  } catch (err) {
-    console.error("Supabase snapshot save failed:", err);
-  }
+  // 5. Persist all 3 snapshots in parallel so dashboard reads stay in sync
+  await Promise.all(
+    ALL_STRATEGIES.map(async (s) => {
+      try {
+        await saveSnapshot(snapshots[s]);
+      } catch (err) {
+        console.error(`Snapshot save failed for ${s}:`, err);
+      }
+    })
+  );
 
-  // 6. Auto-record $200 paper trades into tracker
-  try {
-    const picks = top5.map((asset, idx) => ({
-      pick_date: today,
-      strategy,
-      rank: idx + 1,
-      coin_id: asset.id,
-      symbol: asset.symbol.toUpperCase(),
-      name: asset.name,
-      entry_price: asset.price,
-      amount_usd: 200,
-      coins_held: 200 / asset.price,
-      image_url: asset.image ?? null,
-      signal: asset.signal,
-      score_total: asset.scores.total,
-      narrative_tags: asset.narrativeTags ?? [],
-    }));
-    await saveTrackerPicks(picks);
-  } catch (err) {
-    console.error("Tracker save failed:", err);
-  }
-
-  return NextResponse.json(snapshot);
+  return NextResponse.json(snapshots[strategy]);
 }
 
 // POST /api/recommendations — manual trigger (for cron job)
