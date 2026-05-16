@@ -22,18 +22,9 @@ const PER_COIN_USD = 200;
  *   • $200 per holding × 15 = $3000 total
  *   • Idempotent: re-calling on the same day returns the existing basket
  *
- * Auth: pass `Authorization: Bearer <CRON_SECRET>` if CRON_SECRET is set.
+ * No auth required — paper trades only, idempotent by date.
  */
 export async function POST(req: NextRequest) {
-  // Optional auth
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
   // Allow overriding the basket date via ?date=YYYY-MM-DD (for backfills / testing)
   const dateParam = req.nextUrl.searchParams.get("date");
   const basketDate = dateParam ?? format(new Date(), "yyyy-MM-dd");
