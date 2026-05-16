@@ -184,6 +184,18 @@ export async function createBasket(
   return { basket: basket as DailyBasketRow, created: true };
 }
 
+export async function getBasketRowByDate(
+  basketDate: string
+): Promise<DailyBasketRow | null> {
+  const { data, error } = await supabase
+    .from("daily_baskets")
+    .select("*")
+    .eq("basket_date", basketDate)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as DailyBasketRow | null) ?? null;
+}
+
 export async function listBaskets(limit = 90): Promise<DailyBasketRow[]> {
   const { data, error } = await supabase
     .from("daily_baskets")

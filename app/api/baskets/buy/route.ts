@@ -4,7 +4,11 @@ import { getTopMarkets, getCoinHistory } from "@/lib/coingecko";
 import { buildDefiMap } from "@/lib/defillama";
 import { buildMarketRegime } from "@/lib/feargreed";
 import { scoreCoin, filterAndRank } from "@/lib/scoring";
-import { createBasket, NewBasketHoldingInput } from "@/lib/supabase";
+import {
+  createBasket,
+  getBasketRowByDate,
+  NewBasketHoldingInput,
+} from "@/lib/supabase";
 import { Strategy } from "@/types/crypto";
 
 export const runtime = "nodejs";
@@ -30,6 +34,21 @@ export async function POST(req: NextRequest) {
   const basketDate = dateParam ?? format(new Date(), "yyyy-MM-dd");
 
   try {
+    // 0. Idempotency short-circuit: if today's basket already exists,
+    //    return it without hitting CoinGecko (saves rate-limit headroom).
+    const existing = await getBasketRowByDate(basketDate);
+    if (existing) {
+      return NextResponse.json({
+        ok: true,
+        created: false,
+        basket_date: existing.basket_date,
+        basket_id: existing.id,
+        total_invested: existing.total_invested,
+        num_holdings: existing.num_coins,
+        message: `Basket for ${existing.basket_date} already exists — no changes`,
+      });
+    }
+
     // 1. Pull market data once for all strategies
     const [markets, defiMap, regime] = await Promise.all([
       getTopMarkets(250),
