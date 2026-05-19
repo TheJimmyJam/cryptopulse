@@ -3,7 +3,7 @@ import {
   getAllBasketHoldings,
   listBaskets,
 } from "@/lib/supabase";
-import { DailyBasketSummary } from "@/types/crypto";
+import { BasketHoldingRow, DailyBasketSummary, Strategy } from "@/types/crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,6 +111,139 @@ export async function GET() {
     const totalPnl = totalCurrent - totalInvested;
     const totalPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
 
+    // ─── Cross-basket KPI computation ────────────────────────────────────────
+    type PricedHolding = BasketHoldingRow & {
+      currentValue: number;
+      pnlUsd: number;
+      pnlPct: number;
+    };
+
+    const pricedHoldings: PricedHolding[] = holdings
+      .map((h) => {
+        const cp = currentPrices[h.coin_id];
+        if (typeof cp !== "number" || cp <= 0) return null;
+        const cv = h.coins_held * cp;
+        const pnlUsd = cv - h.amount_usd;
+        const pnlPct = (pnlUsd / h.amount_usd) * 100;
+        return { ...h, currentValue: cv, pnlUsd, pnlPct };
+      })
+      .filter(Boolean) as PricedHolding[];
+
+    // Best & worst picks by % and by $
+    const sortedByPct = [...pricedHoldings].sort((a, b) => b.pnlPct - a.pnlPct);
+    const sortedByUsd = [...pricedHoldings].sort((a, b) => b.pnlUsd - a.pnlUsd);
+    const bestPickPct = sortedByPct[0] ?? null;
+    const worstPickPct = sortedByPct[sortedByPct.length - 1] ?? null;
+    const bestPickUsd = sortedByUsd[0] ?? null;
+    const worstPickUsd = sortedByUsd[sortedByUsd.length - 1] ?? null;
+
+    // Most frequently picked coin (across all holdings, not just priced)
+    const pickCounts: Record<string, { symbol: string; name: string; image_url: string | null; count: number }> = {};
+    for (const h of holdings) {
+      if (!pickCounts[h.coin_id]) {
+        pickCounts[h.coin_id] = { symbol: h.symbol, name: h.name, image_url: h.image_url, count: 0 };
+      }
+      pickCounts[h.coin_id].count++;
+    }
+    const mostPickedEntry = Object.values(pickCounts).sort((a, b) => b.count - a.count)[0] ?? null;
+
+    // Win rate across all priced holdings
+    const totalWinners = pricedHoldings.filter((h) => h.pnlUsd > 0).length;
+    const totalLosers = pricedHoldings.filter((h) => h.pnlUsd < 0).length;
+    const winRate = pricedHoldings.length > 0 ? (totalWinners / pricedHoldings.length) * 100 : 0;
+
+    // Avg pick P&L %
+    const avgPickPnlPct =
+      pricedHoldings.length > 0
+        ? pricedHoldings.reduce((s, h) => s + h.pnlPct, 0) / pricedHoldings.length
+        : null;
+
+    // Avg daily basket P&L %
+    const pricedSummaries = summaries.filter((s) => s.pnl_pct !== null);
+    const avgDailyPnlPct =
+      pricedSummaries.length > 0
+        ? pricedSummaries.reduce((s, b) => s + (b.pnl_pct ?? 0), 0) / pricedSummaries.length
+        : null;
+
+    // Best strategy all-time by P&L %
+    const strategyTotals: Record<Strategy, { invested: number; current: number }> = {
+      conservative: { invested: 0, current: 0 },
+      growth: { invested: 0, current: 0 },
+      speculative: { invested: 0, current: 0 },
+    };
+    for (const h of pricedHoldings) {
+      strategyTotals[h.strategy].invested += h.amount_usd;
+      strategyTotals[h.strategy].current += h.currentValue;
+    }
+    const strategyRankings = (Object.entries(strategyTotals) as [Strategy, { invested: number; current: number }][])
+      .map(([strategy, v]) => ({
+        strategy,
+        pnl_usd: v.current - v.invested,
+        pnl_pct: v.invested > 0 ? ((v.current - v.invested) / v.invested) * 100 : 0,
+      }))
+      .sort((a, b) => b.pnl_pct - a.pnl_pct);
+
+    // Current W/L streak (most recent baskets first)
+    const sortedSummaries = [...summaries].sort(
+      (a, b) => new Date(b.basket_date).getTime() - new Date(a.basket_date).getTime()
+    );
+    let currentStreak: { type: "W" | "L" | "—"; count: number } = { type: "—", count: 0 };
+    if (sortedSummaries.length > 0 && sortedSummaries[0].pnl_pct !== null) {
+      const firstType = sortedSummaries[0].pnl_pct >= 0 ? "W" : "L";
+      let streakCount = 0;
+      for (const s of sortedSummaries) {
+        if (s.pnl_pct === null) break;
+        const t = s.pnl_pct >= 0 ? "W" : "L";
+        if (t !== firstType) break;
+        streakCount++;
+      }
+      currentStreak = { type: firstType, count: streakCount };
+    }
+
+    // Total unique coins ever picked
+    const totalUniqueCoins = new Set(holdings.map((h) => h.coin_id)).size;
+
+    // Largest single-day $ swing (best and worst basket by pnl_usd)
+    const pricedByUsd = summaries.filter((s) => s.pnl_usd !== null);
+    const bestDayUsd = pricedByUsd.sort((a, b) => (b.pnl_usd ?? 0) - (a.pnl_usd ?? 0))[0] ?? null;
+    const worstDayUsd = pricedByUsd.sort((a, b) => (a.pnl_usd ?? 0) - (b.pnl_usd ?? 0))[0] ?? null;
+
+    function pickKpi(h: PricedHolding | null) {
+      if (!h) return null;
+      return {
+        symbol: h.symbol,
+        name: h.name,
+        image_url: h.image_url,
+        pnl_pct: h.pnlPct,
+        pnl_usd: h.pnlUsd,
+        basket_date: h.basket_date,
+        strategy: h.strategy,
+      };
+    }
+
+    const kpis = {
+      best_pick_pct: pickKpi(bestPickPct),
+      worst_pick_pct: pickKpi(worstPickPct),
+      best_pick_usd: pickKpi(bestPickUsd),
+      worst_pick_usd: pickKpi(worstPickUsd),
+      most_picked: mostPickedEntry,
+      win_rate: winRate,
+      total_winners: totalWinners,
+      total_losers: totalLosers,
+      avg_pick_pnl_pct: avgPickPnlPct,
+      avg_daily_pnl_pct: avgDailyPnlPct,
+      strategy_rankings: strategyRankings,
+      current_streak: currentStreak,
+      total_unique_coins: totalUniqueCoins,
+      best_day_usd: bestDayUsd
+        ? { basket_date: bestDayUsd.basket_date, pnl_usd: bestDayUsd.pnl_usd, pnl_pct: bestDayUsd.pnl_pct }
+        : null,
+      worst_day_usd: worstDayUsd
+        ? { basket_date: worstDayUsd.basket_date, pnl_usd: worstDayUsd.pnl_usd, pnl_pct: worstDayUsd.pnl_pct }
+        : null,
+      total_fees: totalFeesAll,
+    };
+
     return NextResponse.json({
       baskets: summaries,
       portfolio: {
@@ -121,6 +254,7 @@ export async function GET() {
         pnl_pct: totalPnlPct,
         num_baskets: summaries.length,
       },
+      kpis,
     });
   } catch (err) {
     console.error("List baskets failed:", err);
