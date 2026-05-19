@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback, ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import clsx from "clsx";
+import gsap from "gsap";
 import {
   BasketDetail,
   BasketHoldingEnriched,
@@ -77,6 +78,98 @@ function fmtDate(iso: string) {
   });
 }
 
+// ─── Animation primitives ────────────────────────────────────────────────────
+
+/**
+ * CountUpValue — GSAP-powered counter that animates from 0 to `to`.
+ * The `format` callback controls how the number is displayed at each frame.
+ */
+function CountUpValue({
+  to,
+  format,
+  duration = 1.4,
+  delay = 0,
+  className,
+}: {
+  to: number;
+  format: (n: number) => string;
+  duration?: number;
+  delay?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    el.textContent = format(0);
+    const obj = { val: 0 };
+    const tween = gsap.to(obj, {
+      val: to,
+      duration,
+      delay,
+      ease: "power2.out",
+      onUpdate() { el.textContent = format(obj.val); },
+      onComplete() { el.textContent = format(to); },
+    });
+    return () => { tween.kill(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [to]);
+  return <span ref={ref} className={className}>{format(0)}</span>;
+}
+
+/**
+ * ScrambleValue — characters cycle through random glyphs before settling.
+ * The blur progressively clears as characters resolve (snow-coalesce effect).
+ */
+function ScrambleValue({
+  text,
+  duration = 900,
+  delay = 0,
+  className,
+}: {
+  text: string;
+  duration?: number;
+  delay?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$%+-.×≠≈";
+    let startTime: number | null = null;
+    let rafId: number;
+    const delayTimer = setTimeout(() => {
+      const tick = (now: number) => {
+        if (!startTime) startTime = now;
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const revealed = Math.floor(progress * text.length);
+        let current = text.slice(0, revealed);
+        for (let i = revealed; i < text.length; i++) {
+          current += CHARS[Math.floor(Math.random() * CHARS.length)];
+        }
+        el.textContent = current;
+        el.style.filter = `blur(${((1 - progress) * 5).toFixed(1)}px)`;
+        if (progress < 1) {
+          rafId = requestAnimationFrame(tick);
+        } else {
+          el.textContent = text;
+          el.style.filter = "";
+        }
+      };
+      rafId = requestAnimationFrame(tick);
+    }, delay);
+    return () => {
+      clearTimeout(delayTimer);
+      cancelAnimationFrame(rafId);
+      if (ref.current) { ref.current.style.filter = ""; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  return <span ref={ref} className={className}>{text}</span>;
+}
+
 // ─── Small reusables ────────────────────────────────────────────────────────
 
 const STRATEGY_COLORS: Record<Strategy, string> = {
@@ -92,7 +185,7 @@ function StatCard({
   highlight,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   sub?: ReactNode;
   highlight?: "green" | "red";
 }) {
@@ -123,12 +216,14 @@ function PickHofCard({
   pick,
   sub,
   accent,
+  symbolDelay = 0,
 }: {
   label: string;
   icon: string;
   pick: PickKpi | { symbol: string; name: string; image_url: string | null } | null;
-  sub: string;
+  sub: ReactNode;
   accent: "green" | "red" | "blue" | "violet";
+  symbolDelay?: number;
 }) {
   const accentCls = {
     green: "border-emerald-500/20 bg-emerald-500/5",
@@ -158,7 +253,9 @@ function PickHofCard({
             <div className="w-8 h-8 rounded-full bg-[#252d40] flex-shrink-0" />
           )}
           <div className="min-w-0">
-            <div className="font-black text-white text-sm">{pick.symbol}</div>
+            <div className="font-black text-white text-sm">
+              <ScrambleValue text={pick.symbol} delay={symbolDelay} duration={700} />
+            </div>
             <div className="text-slate-500 text-[10px] truncate">{pick.name}</div>
           </div>
           <div className={clsx("ml-auto text-right font-black text-sm", textCls)}>
@@ -511,6 +608,73 @@ function BasketsListView({
   const [buying, setBuying] = useState(false);
   const [buyMsg, setBuyMsg] = useState<string | null>(null);
 
+  // Animation refs
+  const row1Ref  = useRef<HTMLDivElement>(null);
+  const row2Ref  = useRef<HTMLDivElement>(null);
+  const hof1Ref  = useRef<HTMLDivElement>(null);
+  const hof2Ref  = useRef<HTMLDivElement>(null);
+  const hasAnimated = useRef(false);
+
+  // Fire GSAP entrance animations once KPIs arrive
+  useEffect(() => {
+    const kpisLocal = data?.kpis;
+    if (!kpisLocal || hasAnimated.current) return;
+    hasAnimated.current = true;
+
+    requestAnimationFrame(() => {
+      // Row 1 — cascade up from below, left-to-right stagger
+      if (row1Ref.current) {
+        gsap.from(Array.from(row1Ref.current.children), {
+          y: 50, opacity: 0, duration: 0.65,
+          stagger: 0.1, ease: "power3.out", clearProps: "all",
+        });
+      }
+
+      // Row 2 — each card flies in from a unique direction + countup
+      if (row2Ref.current) {
+        const dirs = [
+          { x: -70, y: 0 },   // Win Rate: from left
+          { x: 70,  y: 0 },   // Avg Return: from right
+          { x: 0,   y: -70 }, // Streak: from top
+          { x: 0,   y: 70 },  // Coins Tried: from bottom
+        ];
+        Array.from(row2Ref.current.children).forEach((card, i) => {
+          gsap.from(card, {
+            ...dirs[i], opacity: 0,
+            duration: 0.7, delay: 0.3 + i * 0.07,
+            ease: "back.out(1.7)", clearProps: "all",
+          });
+        });
+      }
+
+      // HOF row 1 — fly in from four corners
+      if (hof1Ref.current) {
+        const corners = [
+          { x: -80, y: -60 },
+          { x:  80, y: -60 },
+          { x: -80, y:  60 },
+          { x:  80, y:  60 },
+        ];
+        Array.from(hof1Ref.current.children).forEach((card, i) => {
+          gsap.from(card, {
+            ...corners[i], opacity: 0, scale: 0.88,
+            duration: 0.7, delay: 0.6 + i * 0.09,
+            ease: "power3.out", clearProps: "all",
+          });
+        });
+      }
+
+      // HOF row 2 — elastic bounce up
+      if (hof2Ref.current) {
+        gsap.from(Array.from(hof2Ref.current.children), {
+          y: 90, opacity: 0, scale: 0.92,
+          duration: 0.85, stagger: 0.1, delay: 0.9,
+          ease: "elastic.out(1, 0.6)", clearProps: "all",
+        });
+      }
+    });
+  }, [data]);
+
   const load = useCallback(() => {
     setLoading(true);
     fetch("/api/baskets")
@@ -592,7 +756,7 @@ function BasketsListView({
         <div className="space-y-4">
 
           {/* Row 1 — core portfolio stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div ref={row1Ref} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard
               label="Total Paid"
               value={fmt$(portfolio.total_invested, 0)}
@@ -639,12 +803,20 @@ function BasketsListView({
             />
           </div>
 
-          {/* Row 2 — pick-level stats */}
+          {/* Row 2 — pick-level stats, each flying in from a unique direction + countup */}
           {kpis && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div ref={row2Ref} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <StatCard
                 label="All-Time Win Rate"
-                value={kpis.win_rate > 0 ? `${kpis.win_rate.toFixed(1)}%` : "—"}
+                value={
+                  kpis.win_rate > 0
+                    ? <CountUpValue
+                        to={kpis.win_rate}
+                        format={(n) => `${n.toFixed(1)}%`}
+                        delay={0.3}
+                      />
+                    : "—"
+                }
                 highlight={kpis.win_rate >= 50 ? "green" : "red"}
                 sub={
                   <span className="text-slate-500">
@@ -654,7 +826,15 @@ function BasketsListView({
               />
               <StatCard
                 label="Avg Pick Return"
-                value={kpis.avg_pick_pnl_pct !== null ? fmtPct(kpis.avg_pick_pnl_pct) : "—"}
+                value={
+                  kpis.avg_pick_pnl_pct !== null
+                    ? <CountUpValue
+                        to={kpis.avg_pick_pnl_pct}
+                        format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`}
+                        delay={0.37}
+                      />
+                    : "—"
+                }
                 highlight={
                   kpis.avg_pick_pnl_pct !== null
                     ? kpis.avg_pick_pnl_pct >= 0 ? "green" : "red"
@@ -662,7 +842,15 @@ function BasketsListView({
                 }
                 sub={
                   <span className="text-slate-500">
-                    avg daily {kpis.avg_daily_pnl_pct !== null ? fmtPct(kpis.avg_daily_pnl_pct) : "—"}
+                    avg daily{" "}
+                    {kpis.avg_daily_pnl_pct !== null
+                      ? <CountUpValue
+                          to={kpis.avg_daily_pnl_pct}
+                          format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`}
+                          delay={0.37}
+                          className="text-slate-400"
+                        />
+                      : "—"}
                   </span>
                 }
               />
@@ -671,7 +859,11 @@ function BasketsListView({
                 value={
                   kpis.current_streak.type === "—"
                     ? "—"
-                    : `${kpis.current_streak.count} ${kpis.current_streak.type}`
+                    : <CountUpValue
+                        to={kpis.current_streak.count}
+                        format={(n) => `${Math.round(n)} ${kpis.current_streak.type}`}
+                        delay={0.44}
+                      />
                 }
                 highlight={
                   kpis.current_streak.type === "W"
@@ -692,10 +884,23 @@ function BasketsListView({
               />
               <StatCard
                 label="Coins Tried"
-                value={kpis.total_unique_coins > 0 ? String(kpis.total_unique_coins) : "—"}
+                value={
+                  kpis.total_unique_coins > 0
+                    ? <CountUpValue
+                        to={kpis.total_unique_coins}
+                        format={(n) => String(Math.round(n))}
+                        delay={0.51}
+                      />
+                    : "—"
+                }
                 sub={
                   <span className="text-slate-500">
-                    {fmt$(kpis.total_fees, 0)} total fees paid
+                    <CountUpValue
+                      to={kpis.total_fees}
+                      format={(n) => `$${Math.round(n).toLocaleString()}`}
+                      delay={0.51}
+                      className="text-slate-400"
+                    />{" "}total fees paid
                   </span>
                 }
               />
@@ -708,45 +913,60 @@ function BasketsListView({
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest pt-1">
                 Picks Record Book
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div ref={hof1Ref} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <PickHofCard
                   label="Best Pick Ever (%)"
                   icon="🏆"
                   pick={kpis.best_pick_pct}
-                  sub={kpis.best_pick_pct ? fmtPct(kpis.best_pick_pct.pnl_pct) : "—"}
+                  sub={kpis.best_pick_pct
+                    ? <ScrambleValue text={fmtPct(kpis.best_pick_pct.pnl_pct)} delay={800} duration={700} />
+                    : "—"}
                   accent="green"
+                  symbolDelay={650}
                 />
                 <PickHofCard
                   label="Worst Pick Ever (%)"
                   icon="💀"
                   pick={kpis.worst_pick_pct}
-                  sub={kpis.worst_pick_pct ? fmtPct(kpis.worst_pick_pct.pnl_pct) : "—"}
+                  sub={kpis.worst_pick_pct
+                    ? <ScrambleValue text={fmtPct(kpis.worst_pick_pct.pnl_pct)} delay={900} duration={700} />
+                    : "—"}
                   accent="red"
+                  symbolDelay={750}
                 />
                 <PickHofCard
                   label="Biggest Single Win ($)"
                   icon="💰"
                   pick={kpis.best_pick_usd}
-                  sub={kpis.best_pick_usd ? fmt$(kpis.best_pick_usd.pnl_usd) : "—"}
+                  sub={kpis.best_pick_usd
+                    ? <ScrambleValue text={fmt$(kpis.best_pick_usd.pnl_usd)} delay={1000} duration={700} />
+                    : "—"}
                   accent="green"
+                  symbolDelay={850}
                 />
                 <PickHofCard
                   label="Most Picked Coin"
                   icon="🔁"
                   pick={kpis.most_picked ?? null}
-                  sub={kpis.most_picked ? `${kpis.most_picked.count}× picked` : "—"}
+                  sub={kpis.most_picked
+                    ? <ScrambleValue text={`${kpis.most_picked.count}× picked`} delay={1100} duration={700} />
+                    : "—"}
                   accent="blue"
+                  symbolDelay={950}
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div ref={hof2Ref} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <PickHofCard
                   label="Biggest Single Loss ($)"
                   icon="🩸"
                   pick={kpis.worst_pick_usd}
-                  sub={kpis.worst_pick_usd ? fmt$(kpis.worst_pick_usd.pnl_usd) : "—"}
+                  sub={kpis.worst_pick_usd
+                    ? <ScrambleValue text={fmt$(kpis.worst_pick_usd.pnl_usd)} delay={1200} duration={700} />
+                    : "—"}
                   accent="red"
+                  symbolDelay={1050}
                 />
-                {/* Strategy standings — top 3 */}
+                {/* Strategy standings — top 3, with countup P&L */}
                 {kpis.strategy_rankings.slice(0, 3).map((sr, i) => (
                   <div
                     key={sr.strategy}
@@ -771,7 +991,12 @@ function BasketsListView({
                         sr.pnl_pct >= 0 ? "text-emerald-400" : "text-red-400"
                       )}
                     >
-                      {fmtPct(sr.pnl_pct)}
+                      <CountUpValue
+                        to={sr.pnl_pct}
+                        format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`}
+                        delay={1.1 + i * 0.12}
+                        duration={1.0}
+                      />
                     </div>
                     <div
                       className={clsx(
@@ -779,7 +1004,12 @@ function BasketsListView({
                         sr.pnl_pct >= 0 ? "text-emerald-400/70" : "text-red-400/70"
                       )}
                     >
-                      {fmt$(sr.pnl_usd)} all-time
+                      <CountUpValue
+                        to={sr.pnl_usd}
+                        format={(n) => `${fmt$(n)} all-time`}
+                        delay={1.1 + i * 0.12}
+                        duration={1.0}
+                      />
                     </div>
                   </div>
                 ))}
