@@ -10,6 +10,35 @@ import {
 
 // ─── Types specific to the page ─────────────────────────────────────────────
 
+interface PickKpi {
+  symbol: string;
+  name: string;
+  image_url: string | null;
+  pnl_pct: number;
+  pnl_usd: number;
+  basket_date: string;
+  strategy: Strategy;
+}
+
+interface BasketsKpis {
+  best_pick_pct: PickKpi | null;
+  worst_pick_pct: PickKpi | null;
+  best_pick_usd: PickKpi | null;
+  worst_pick_usd: PickKpi | null;
+  most_picked: { symbol: string; name: string; image_url: string | null; count: number } | null;
+  win_rate: number;
+  total_winners: number;
+  total_losers: number;
+  avg_pick_pnl_pct: number | null;
+  avg_daily_pnl_pct: number | null;
+  strategy_rankings: Array<{ strategy: Strategy; pnl_pct: number; pnl_usd: number }>;
+  current_streak: { type: "W" | "L" | "—"; count: number };
+  total_unique_coins: number;
+  best_day_usd: { basket_date: string; pnl_usd: number | null; pnl_pct: number | null } | null;
+  worst_day_usd: { basket_date: string; pnl_usd: number | null; pnl_pct: number | null } | null;
+  total_fees: number;
+}
+
 interface BasketsListResponse {
   baskets: DailyBasketSummary[];
   portfolio?: {
@@ -20,6 +49,7 @@ interface BasketsListResponse {
     pnl_pct: number;
     num_baskets: number;
   };
+  kpis?: BasketsKpis;
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
@@ -82,6 +112,62 @@ function StatCard({
         {value}
       </div>
       {sub && <div className="text-xs mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Coin-avatar Hall-of-Fame card for best/worst/most-picked picks */
+function PickHofCard({
+  label,
+  icon,
+  pick,
+  sub,
+  accent,
+}: {
+  label: string;
+  icon: string;
+  pick: PickKpi | { symbol: string; name: string; image_url: string | null } | null;
+  sub: string;
+  accent: "green" | "red" | "blue" | "violet";
+}) {
+  const accentCls = {
+    green: "border-emerald-500/20 bg-emerald-500/5",
+    red: "border-red-500/20 bg-red-500/5",
+    blue: "border-blue-500/20 bg-blue-500/5",
+    violet: "border-violet-500/20 bg-violet-500/5",
+  }[accent];
+  const textCls = {
+    green: "text-emerald-400",
+    red: "text-red-400",
+    blue: "text-blue-400",
+    violet: "text-violet-400",
+  }[accent];
+
+  return (
+    <div className={clsx("rounded-xl border p-4", accentCls)}>
+      <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+        <span>{icon}</span>
+        <span>{label}</span>
+      </div>
+      {pick ? (
+        <div className="flex items-center gap-3">
+          {pick.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={pick.image_url} alt={pick.symbol} className="w-8 h-8 rounded-full flex-shrink-0" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-[#252d40] flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="font-black text-white text-sm">{pick.symbol}</div>
+            <div className="text-slate-500 text-[10px] truncate">{pick.name}</div>
+          </div>
+          <div className={clsx("ml-auto text-right font-black text-sm", textCls)}>
+            {sub}
+          </div>
+        </div>
+      ) : (
+        <div className="text-slate-600 text-sm">No data yet</div>
+      )}
     </div>
   );
 }
@@ -456,6 +542,7 @@ function BasketsListView({
 
   const baskets = data?.baskets ?? [];
   const portfolio = data?.portfolio;
+  const kpis = data?.kpis;
   const isUp = (portfolio?.pnl_usd ?? 0) > 0;
   const isDown = (portfolio?.pnl_usd ?? 0) < 0;
 
@@ -502,51 +589,204 @@ function BasketsListView({
 
       {/* Portfolio summary */}
       {portfolio && portfolio.num_baskets > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard
-            label="Total Paid"
-            value={fmt$(portfolio.total_invested, 0)}
-            sub={
-              <span className="text-slate-500">
-                {portfolio.num_baskets} days
-                {portfolio.total_fees ? ` · ${fmt$(portfolio.total_fees, 0)} fees` : ""}
-              </span>
-            }
-          />
-          <StatCard
-            label="Current Value"
-            value={fmt$(portfolio.current_value, 0)}
-            highlight={isUp ? "green" : isDown ? "red" : undefined}
-            sub={
-              <span className={isUp ? "text-emerald-400" : isDown ? "text-red-400" : "text-slate-400"}>
-                {fmt$(portfolio.pnl_usd)} ({fmtPct(portfolio.pnl_pct)})
-              </span>
-            }
-          />
-          <StatCard
-            label="Best Day"
-            value={(() => {
-              const best = [...baskets].sort((a, b) => (b.pnl_pct ?? -9999) - (a.pnl_pct ?? -9999))[0];
-              return best ? fmtPct(best.pnl_pct) : "—";
-            })()}
-            highlight="green"
-            sub={(() => {
-              const best = [...baskets].sort((a, b) => (b.pnl_pct ?? -9999) - (a.pnl_pct ?? -9999))[0];
-              return best ? <span className="text-slate-500">{fmtDate(best.basket_date)}</span> : null;
-            })()}
-          />
-          <StatCard
-            label="Worst Day"
-            value={(() => {
-              const w = [...baskets].sort((a, b) => (a.pnl_pct ?? 9999) - (b.pnl_pct ?? 9999))[0];
-              return w ? fmtPct(w.pnl_pct) : "—";
-            })()}
-            highlight="red"
-            sub={(() => {
-              const w = [...baskets].sort((a, b) => (a.pnl_pct ?? 9999) - (b.pnl_pct ?? 9999))[0];
-              return w ? <span className="text-slate-500">{fmtDate(w.basket_date)}</span> : null;
-            })()}
-          />
+        <div className="space-y-4">
+
+          {/* Row 1 — core portfolio stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <StatCard
+              label="Total Paid"
+              value={fmt$(portfolio.total_invested, 0)}
+              sub={
+                <span className="text-slate-500">
+                  {portfolio.num_baskets} days
+                  {portfolio.total_fees ? ` · ${fmt$(portfolio.total_fees, 0)} fees` : ""}
+                </span>
+              }
+            />
+            <StatCard
+              label="Current Value"
+              value={fmt$(portfolio.current_value, 0)}
+              highlight={isUp ? "green" : isDown ? "red" : undefined}
+              sub={
+                <span className={isUp ? "text-emerald-400" : isDown ? "text-red-400" : "text-slate-400"}>
+                  {fmt$(portfolio.pnl_usd)} ({fmtPct(portfolio.pnl_pct)})
+                </span>
+              }
+            />
+            <StatCard
+              label="Best Day (%)"
+              value={(() => {
+                const best = [...baskets].sort((a, b) => (b.pnl_pct ?? -9999) - (a.pnl_pct ?? -9999))[0];
+                return best ? fmtPct(best.pnl_pct) : "—";
+              })()}
+              highlight="green"
+              sub={(() => {
+                const best = [...baskets].sort((a, b) => (b.pnl_pct ?? -9999) - (a.pnl_pct ?? -9999))[0];
+                return best ? <span className="text-slate-500">{fmtDate(best.basket_date)}</span> : null;
+              })()}
+            />
+            <StatCard
+              label="Worst Day (%)"
+              value={(() => {
+                const w = [...baskets].sort((a, b) => (a.pnl_pct ?? 9999) - (b.pnl_pct ?? 9999))[0];
+                return w ? fmtPct(w.pnl_pct) : "—";
+              })()}
+              highlight="red"
+              sub={(() => {
+                const w = [...baskets].sort((a, b) => (a.pnl_pct ?? 9999) - (b.pnl_pct ?? 9999))[0];
+                return w ? <span className="text-slate-500">{fmtDate(w.basket_date)}</span> : null;
+              })()}
+            />
+          </div>
+
+          {/* Row 2 — pick-level stats */}
+          {kpis && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <StatCard
+                label="All-Time Win Rate"
+                value={kpis.win_rate > 0 ? `${kpis.win_rate.toFixed(1)}%` : "—"}
+                highlight={kpis.win_rate >= 50 ? "green" : "red"}
+                sub={
+                  <span className="text-slate-500">
+                    {kpis.total_winners}W / {kpis.total_losers}L across all picks
+                  </span>
+                }
+              />
+              <StatCard
+                label="Avg Pick Return"
+                value={kpis.avg_pick_pnl_pct !== null ? fmtPct(kpis.avg_pick_pnl_pct) : "—"}
+                highlight={
+                  kpis.avg_pick_pnl_pct !== null
+                    ? kpis.avg_pick_pnl_pct >= 0 ? "green" : "red"
+                    : undefined
+                }
+                sub={
+                  <span className="text-slate-500">
+                    avg daily {kpis.avg_daily_pnl_pct !== null ? fmtPct(kpis.avg_daily_pnl_pct) : "—"}
+                  </span>
+                }
+              />
+              <StatCard
+                label="Current Streak"
+                value={
+                  kpis.current_streak.type === "—"
+                    ? "—"
+                    : `${kpis.current_streak.count} ${kpis.current_streak.type}`
+                }
+                highlight={
+                  kpis.current_streak.type === "W"
+                    ? "green"
+                    : kpis.current_streak.type === "L"
+                    ? "red"
+                    : undefined
+                }
+                sub={
+                  <span className="text-slate-500">
+                    {kpis.current_streak.type === "W"
+                      ? "winning days in a row"
+                      : kpis.current_streak.type === "L"
+                      ? "losing days in a row"
+                      : "no streak yet"}
+                  </span>
+                }
+              />
+              <StatCard
+                label="Coins Tried"
+                value={kpis.total_unique_coins > 0 ? String(kpis.total_unique_coins) : "—"}
+                sub={
+                  <span className="text-slate-500">
+                    {fmt$(kpis.total_fees, 0)} total fees paid
+                  </span>
+                }
+              />
+            </div>
+          )}
+
+          {/* Hall of Fame — best/worst individual picks */}
+          {kpis && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest pt-1">
+                Picks Record Book
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <PickHofCard
+                  label="Best Pick Ever (%)"
+                  icon="🏆"
+                  pick={kpis.best_pick_pct}
+                  sub={kpis.best_pick_pct ? fmtPct(kpis.best_pick_pct.pnl_pct) : "—"}
+                  accent="green"
+                />
+                <PickHofCard
+                  label="Worst Pick Ever (%)"
+                  icon="💀"
+                  pick={kpis.worst_pick_pct}
+                  sub={kpis.worst_pick_pct ? fmtPct(kpis.worst_pick_pct.pnl_pct) : "—"}
+                  accent="red"
+                />
+                <PickHofCard
+                  label="Biggest Single Win ($)"
+                  icon="💰"
+                  pick={kpis.best_pick_usd}
+                  sub={kpis.best_pick_usd ? fmt$(kpis.best_pick_usd.pnl_usd) : "—"}
+                  accent="green"
+                />
+                <PickHofCard
+                  label="Most Picked Coin"
+                  icon="🔁"
+                  pick={kpis.most_picked ?? null}
+                  sub={kpis.most_picked ? `${kpis.most_picked.count}× picked` : "—"}
+                  accent="blue"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <PickHofCard
+                  label="Biggest Single Loss ($)"
+                  icon="🩸"
+                  pick={kpis.worst_pick_usd}
+                  sub={kpis.worst_pick_usd ? fmt$(kpis.worst_pick_usd.pnl_usd) : "—"}
+                  accent="red"
+                />
+                {/* Strategy standings — top 3 */}
+                {kpis.strategy_rankings.slice(0, 3).map((sr, i) => (
+                  <div
+                    key={sr.strategy}
+                    className={clsx(
+                      "rounded-xl border p-4",
+                      i === 0
+                        ? "border-emerald-500/20 bg-emerald-500/5"
+                        : i === 1
+                        ? "border-blue-500/20 bg-blue-500/5"
+                        : "border-slate-700/40 bg-slate-800/20"
+                    )}
+                  >
+                    <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                      <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}</span>
+                      <span>
+                        {sr.strategy.charAt(0).toUpperCase() + sr.strategy.slice(1)} Strategy
+                      </span>
+                    </div>
+                    <div
+                      className={clsx(
+                        "text-xl font-black",
+                        sr.pnl_pct >= 0 ? "text-emerald-400" : "text-red-400"
+                      )}
+                    >
+                      {fmtPct(sr.pnl_pct)}
+                    </div>
+                    <div
+                      className={clsx(
+                        "text-xs mt-0.5",
+                        sr.pnl_pct >= 0 ? "text-emerald-400/70" : "text-red-400/70"
+                      )}
+                    >
+                      {fmt$(sr.pnl_usd)} all-time
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 
