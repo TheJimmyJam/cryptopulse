@@ -5,6 +5,12 @@ import {
 } from "@/lib/supabase";
 import { BasketHoldingRow, DailyBasketSummary, Strategy } from "@/types/crypto";
 
+type PricedHolding = BasketHoldingRow & {
+  currentValue: number;
+  pnlUsd: number;
+  pnlPct: number;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -112,11 +118,6 @@ export async function GET() {
     const totalPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
 
     // ─── Cross-basket KPI computation ────────────────────────────────────────
-    type PricedHolding = BasketHoldingRow & {
-      currentValue: number;
-      pnlUsd: number;
-      pnlPct: number;
-    };
 
     const pricedHoldings: PricedHolding[] = holdings
       .map((h) => {
@@ -208,7 +209,7 @@ export async function GET() {
     const bestDayUsd = pricedByUsd.sort((a, b) => (b.pnl_usd ?? 0) - (a.pnl_usd ?? 0))[0] ?? null;
     const worstDayUsd = pricedByUsd.sort((a, b) => (a.pnl_usd ?? 0) - (b.pnl_usd ?? 0))[0] ?? null;
 
-    function pickKpi(h: PricedHolding | null) {
+    const pickKpi = (h: PricedHolding | null) => {
       if (!h) return null;
       return {
         symbol: h.symbol,
@@ -219,7 +220,7 @@ export async function GET() {
         basket_date: h.basket_date,
         strategy: h.strategy,
       };
-    }
+    };
 
     const kpis = {
       best_pick_pct: pickKpi(bestPickPct),
